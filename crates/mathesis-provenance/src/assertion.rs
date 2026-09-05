@@ -1,6 +1,40 @@
+use crate::error::{ProvenanceResult, ValidationError};
 use crate::model::{AssertionId, EpistemicState, NewRelationAssertion, RelationAssertion, RelationKind, ReleaseId};
 use crate::store::{ProvenanceStore, Result};
 use rusqlite::{params, OptionalExtension};
+
+/// `"kind:id"`形式の`subject_ref`/`object_ref`から先頭のkindタグだけを取り出す。
+fn ref_kind(reference: &str) -> &str {
+    reference.split_once(':').map(|(k, _)| k).unwrap_or(reference)
+}
+
+/// このクレートの実際のプロデューサ（`legacy_adapter.rs`）が作る組み合わせだけを
+/// 検証するガードレール。ARCHITECTURE_NEXT.md §5.2の型付きカタログ（Entity/
+/// RelationSchema）が無いこの増分でも、`paper:X specializes paper:Y`のような
+/// 明らかに無意味な行が紛れ込むのを防ぐ（外部レビュー2026-09-05指摘）。
+/// まだどのアダプタも作らない述語（`imports`/`related_to`/`uses_concept`）は
+/// ルール未定義のため素通しする——将来の用途を先回りして禁止しない。
+fn validate_relation_kinds(predicate: RelationKind, subject_ref: &str, object_ref: &str) -> ProvenanceResult<()> {
+    let (s, o) = (ref_kind(subject_ref), ref_kind(object_ref));
+    let ok = match predicate {
+        RelationKind::DependsOn => s == "judgment" && o == "judgment",
+        RelationKind::Cites => s == "paper" && o == "paper",
+        RelationKind::Implies | RelationKind::Specializes | RelationKind::Generalizes | RelationKind::EquivalentTo => {
+            (s == "judgment" && o == "judgment") || (s == "concept" && o == "concept")
+        }
+        RelationKind::Imports | RelationKind::RelatedTo | RelationKind::UsesConcept => true,
+    };
+    if ok {
+        Ok(())
+    } else {
+        Err(ValidationError::RelationKindMismatch {
+            predicate,
+            subject_ref: subject_ref.to_string(),
+            object_ref: object_ref.to_string(),
+        }
+        .into())
+    }
+}
 
 impl ProvenanceStore {
     /// レガシースナップショットアダプタの冪等性を支える鍵引き。同じ
@@ -16,7 +50,8 @@ impl ProvenanceStore {
             .map(|opt| opt.map(AssertionId))
     }
 
-    pub fn insert_assertion(&self, new: &NewRelationAssertion) -> Result<AssertionId> {
+    pub fn insert_assertion(&self, new: &NewRelationAssertion) -> ProvenanceResult<AssertionId> {
+        validate_relation_kinds(new.predicate, &new.subject_ref, &new.object_ref)?;
         self.conn
             .prepare_cached(
                 "INSERT INTO relation_assertions

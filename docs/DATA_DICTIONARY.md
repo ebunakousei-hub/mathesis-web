@@ -255,3 +255,72 @@ of this shipped in code:**
    not go into `RelationAssertion.score` — it goes into the `model_output`
    `Evidence` row's new `metric_name`/`metric_value` columns, for `Proposed`
    and `Confirmed` alike.
+
+**2026-09-05, third pass — smaller fixes from a second external review,
+applied directly (not re-litigated as open questions):**
+
+6. `SourceRecord` is now keyed by `(provider, provider_id, provider_revision)`
+   instead of just `(provider, provider_id)` — the earlier key meant
+   re-fetching the same paper at a different revision would silently reuse
+   the stale record, contradicting §5.1's "immutable source envelope"
+   framing. This increment's own call sites are unaffected (they never set
+   `provider_revision`); the fix matters for Phase 2's adapters, which will.
+7. The `paper_citations` → `cites` evidence no longer carries a fake locator
+   string (`"\cite in {arxiv_id}"`, which restated the subject rather than
+   locating anything). `mathesis-fulltext::citation` does not retain a byte
+   span for the bibliography entry, so the locator is `None` — an absent
+   locator is more honest than one that looks precise but isn't.
+8. `insert_assertion` now rejects `subject_ref`/`object_ref` kind-tag
+   combinations that don't match its `predicate` (e.g. `paper:X specializes
+   paper:Y`) via a small guard in `assertion.rs`. This is **not** the typed
+   entity catalog ARCHITECTURE_NEXT.md §5.2 describes (`Entity{id,
+   entity_kind}` + a real `RelationSchema` table) — it only encodes the
+   combinations this increment's own adapter actually produces, and passes
+   through predicates no adapter uses yet (`imports`/`related_to`/
+   `uses_concept`) rather than guessing rules for them. It exists to catch
+   adapter bugs now, not to stand in for the real catalog later.
+
+## Known limitations (not fixed in this increment — deliberately deferred)
+
+A second external review (2026-09-05) raised several points that are valid
+but out of scope for "Phase 1, Increment 1: schema + legacy adapter." Recording
+them here so they aren't lost, rather than quietly building partial, guessed
+versions of them now:
+
+- **No typed entity catalog.** `subject_ref`/`object_ref` are tagged strings,
+  not foreign keys into a real `Entity` table with `entity_kind`, and there is
+  no `RelationSchema` table declaring which entity kinds each predicate
+  allows. Item 8 above is a narrow adapter-bug guard, not this catalog.
+  Building the real thing means implementing ARCHITECTURE_NEXT.md §5.2
+  (`Paper`/`Statement`/`Concept`/`ProofArtifact`), which Phase 1's own bullet
+  list does not include — it belongs with `mathesis-catalog` (§8).
+- **Relation semantics are still coarse.** `equivalent_to` alone doesn't
+  distinguish definitional equality from isomorphism from "the same object
+  under different names" from bibliographic synonymy; `implies` doesn't
+  record which formal system or context it holds in. Adding fields like
+  `semantic_level`/`witness_type`/`formal_system` was considered and
+  rejected *for this increment specifically*: none of the legacy data sources
+  record these distinctions, so populating them now would mean inventing
+  values the source data doesn't support — exactly the fabrication this
+  project's own conventions rule out. These fields should be added when an
+  adapter (or a review workflow) actually produces the information, not
+  before.
+- **No review workflow.** `ReviewDecision` can store a decision, but there
+  is no reviewer authentication, no UI, no conflict handling, no enforcement
+  that a `rejected` assertion stays suppressed from re-proposal, and no
+  publication-policy gate at release time. This increment's `ReviewDecision`
+  rows are historical records of a legacy status, not evidence of a working
+  review system.
+- **Evidence-per-assertion is enforced by transaction discipline, not by the
+  schema.** `import_graph`/`import_taxonomy_relations` are each wrapped in
+  one `ProvenanceStore::transaction`, so a crash mid-import rolls back
+  cleanly rather than leaving an assertion with zero evidence rows — but
+  nothing in the schema itself (a trigger, a deferred constraint) enforces
+  this for a future caller that doesn't use `transaction`. Not fixed here:
+  SQLite cross-table cardinality constraints need triggers, and no caller
+  besides this adapter exists yet to justify writing them speculatively.
+- **`web/`, `mathesis-server`, and the existing `export.rs` pipelines are
+  still untouched.** Nothing displayed by the running application yet links
+  to a `RelationAssertion`/`Evidence`/`SourceRecord`/release id — this
+  increment built and validated the evidence core against real legacy data,
+  but did not wire it into what users see. That is the next piece of work.

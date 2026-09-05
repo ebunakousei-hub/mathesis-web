@@ -1,7 +1,66 @@
 use mathesis_provenance::{
     EpistemicState, EvidenceKind, NewEvidence, NewRelationAssertion, NewRelease, NewReviewDecision,
-    NewSourceRecord, ProvenanceStore, RelationKind, ReviewOutcome,
+    NewSourceRecord, ProvenanceError, ProvenanceStore, RelationKind, ReviewOutcome, ValidationError,
 };
+
+#[test]
+fn insert_assertion_rejects_nonsensical_subject_object_kinds() {
+    // 外部レビュー(2026-09-05)が挙げた具体例そのもの:
+    // "paper:X specializes paper:Y" は無意味な組み合わせなので拒否する。
+    let store = ProvenanceStore::open_in_memory().unwrap();
+    let release = store
+        .get_or_insert_release(&NewRelease { tag: "t".into(), git_commit: None, generated_at_unix: 0, notes: None })
+        .unwrap();
+    let err = store
+        .insert_assertion(&NewRelationAssertion {
+            subject_ref: "paper:math/0001".into(),
+            predicate: RelationKind::Specializes,
+            object_ref: "paper:math/0002".into(),
+            epistemic_state: EpistemicState::Proposed,
+            score: None,
+            policy_version: None,
+            created_by_run_id: None,
+            supersedes_id: None,
+            release_id: release,
+            legacy_ref: None,
+        })
+        .unwrap_err();
+    assert!(matches!(
+        err,
+        ProvenanceError::Validation(ValidationError::RelationKindMismatch { .. })
+    ));
+    assert_eq!(store.assertion_count().unwrap(), 0, "拒否された行は残らない");
+}
+
+#[test]
+fn insert_assertion_accepts_known_good_kind_pairs() {
+    let store = ProvenanceStore::open_in_memory().unwrap();
+    let release = store
+        .get_or_insert_release(&NewRelease { tag: "t".into(), git_commit: None, generated_at_unix: 0, notes: None })
+        .unwrap();
+    for (predicate, subject, object) in [
+        (RelationKind::DependsOn, "judgment:1", "judgment:2"),
+        (RelationKind::Cites, "paper:math/0001", "paper:math/0002"),
+        (RelationKind::Specializes, "concept:elliptic curve", "concept:abelian variety"),
+        (RelationKind::Implies, "judgment:1", "judgment:2"),
+    ] {
+        store
+            .insert_assertion(&NewRelationAssertion {
+                subject_ref: subject.into(),
+                predicate,
+                object_ref: object.into(),
+                epistemic_state: EpistemicState::Proposed,
+                score: None,
+                policy_version: None,
+                created_by_run_id: None,
+                supersedes_id: None,
+                release_id: release,
+                legacy_ref: None,
+            })
+            .unwrap();
+    }
+    assert_eq!(store.assertion_count().unwrap(), 4);
+}
 
 #[test]
 fn release_is_interned_by_tag() {

@@ -9,6 +9,7 @@
 //! 既存のexportパイプラインにも触れない（それは次の増分の仕事）。
 
 pub mod assertion;
+pub mod error;
 pub mod evidence;
 pub mod legacy_adapter;
 pub mod model;
@@ -18,6 +19,7 @@ pub mod source_record;
 pub mod stats;
 pub mod store;
 
+pub use error::{ProvenanceError, ProvenanceResult, ValidationError};
 pub use model::{
     AssertionId, EpistemicState, Evidence, EvidenceId, EvidenceKind, NewEvidence, NewRelationAssertion,
     NewRelease, NewReviewDecision, NewSourceRecord, RelationAssertion, RelationKind, Release, ReleaseId,

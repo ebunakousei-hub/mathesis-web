@@ -3,14 +3,28 @@ use crate::store::{ProvenanceStore, Result};
 use rusqlite::{params, OptionalExtension};
 
 impl ProvenanceStore {
-    /// `(provider, provider_id)`でインターンする。同じ論文/ファイルを指す
-    /// アダプタ呼び出しを何度実行しても同じSourceRecordに集約される
-    /// （`docs/DATA_DICTIONARY.md`設計判断1のper-paper重複排除）。
+    /// `(provider, provider_id, provider_revision)`でインターンする。同じ
+    /// 論文/ファイルを指すアダプタ呼び出しを何度実行しても同じSourceRecordに
+    /// 集約される（`docs/DATA_DICTIONARY.md`設計判断1のper-paper重複排除）。
+    ///
+    /// 外部レビュー（2026-09-05）指摘の修正: 以前は`(provider, provider_id)`
+    /// だけで引いていたため、同じ論文を後で別リビジョン/別内容で取得しても
+    /// 古い行が黙って再利用され、ARCHITECTURE_NEXT.md §5.1の「不変な
+    /// source envelope」という前提と矛盾していた。`provider_revision`を
+    /// 鍵に含める——`IS`で比較するのは、SQLiteのUNIQUE制約はNULL同士を
+    /// 別物として扱う（つまり制約だけでは重複を防げない）ため、この
+    /// SELECTでの明示的な突き合わせが実質的な重複排除の役割を担う。
+    /// このクレートの現在の呼び出し元は全員`provider_revision: None`を渡す
+    /// ので、挙動は変わらない——将来、実際にリビジョン違いを渡す呼び出し元が
+    /// 現れたときに初めて新しい行が作られるようになる。
     pub fn get_or_insert_source_record(&self, new: &NewSourceRecord) -> Result<SourceRecordId> {
         if let Some(id) = self
             .conn
-            .prepare_cached("SELECT id FROM source_records WHERE provider = ?1 AND provider_id = ?2")?
-            .query_row(params![new.provider, new.provider_id], |r| r.get::<_, i64>(0))
+            .prepare_cached(
+                "SELECT id FROM source_records
+                 WHERE provider = ?1 AND provider_id = ?2 AND provider_revision IS ?3",
+            )?
+            .query_row(params![new.provider, new.provider_id, new.provider_revision], |r| r.get::<_, i64>(0))
             .optional()?
         {
             return Ok(SourceRecordId(id));

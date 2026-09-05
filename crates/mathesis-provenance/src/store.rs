@@ -22,9 +22,16 @@ CREATE TABLE IF NOT EXISTS releases (
     notes              TEXT
 );
 
--- ARCHITECTURE_NEXT.md §5.1。`(provider, provider_id)`が同一ソースの同一性キー
--- ——同じarXiv論文が`mathesis-graph`側の判断由来とtaxonomy側の根拠文の両方から
--- 参照されても、SourceRecordは1行に集約される。
+-- ARCHITECTURE_NEXT.md §5.1。`(provider, provider_id, provider_revision)`が
+-- 同一ソースの同一性キー——同じarXiv論文が`mathesis-graph`側の判断由来と
+-- taxonomy側の根拠文の両方から参照されても、SourceRecordは1行に集約される。
+-- `provider_revision`を含めるのは外部レビュー(2026-09-05)の指摘への対応:
+-- 以前は(provider, provider_id)だけだったため、同じ論文を別リビジョンで
+-- 再取得しても古い行が黙って再利用され、「不変なsource envelope」という
+-- ARCHITECTURE_NEXT.md §5.1の前提と矛盾していた。SQLiteはUNIQUE制約で
+-- NULL同士を別物として扱う(複数のNULL revisionが並存しうる)ため、実質的な
+-- 重複排除は`source_record.rs`の`IS`を使ったSELECTが担う——この制約は
+-- リビジョンが実際に埋まっている場合の保険。
 CREATE TABLE IF NOT EXISTS source_records (
     id                 INTEGER PRIMARY KEY,
     provider           TEXT NOT NULL,
@@ -38,7 +45,7 @@ CREATE TABLE IF NOT EXISTS source_records (
     adapter_name       TEXT NOT NULL,
     adapter_version    TEXT NOT NULL,
     parser_version     TEXT,
-    UNIQUE(provider, provider_id)
+    UNIQUE(provider, provider_id, provider_revision)
 );
 
 -- ARCHITECTURE_NEXT.md §5.3。`subject_ref`/`object_ref`はタグ付き文字列

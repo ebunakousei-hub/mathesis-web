@@ -157,10 +157,16 @@ pub fn import_graph(
                 release_id: release,
                 legacy_ref: Some(legacy_ref),
             })?;
+            // `locator: None` — 外部レビュー(2026-09-05)指摘の修正: 以前は
+            // `"\cite in {arxiv_id}"`という、実際には何も位置特定していない
+            // 説明文をlocatorに入れていた(subject_refで既に分かる情報の
+            // 言い換えにすぎない)。`mathesis-fulltext::citation`はbibitemの
+            // バイトオフセットを保持していない(citation.rsに位置情報は無い)
+            // ので、無い精度をあるように見せるより`None`が正直。
             prov.insert_evidence(&NewEvidence {
                 assertion_id,
                 source_record_id: citing_source,
-                locator: Some(format!("\\cite in {}", p.arxiv_id)),
+                locator: None,
                 evidence_kind: EvidenceKind::SourceSpan,
                 extractor_or_model: Some("mathesis-fulltext::citation".into()),
                 version: None,

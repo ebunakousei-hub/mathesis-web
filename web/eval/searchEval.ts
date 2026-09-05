@@ -33,8 +33,9 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
+import { expandRelations } from "../src/dynamicTaxonomy";
 import { buildConceptSearchIndex, hybridSearch } from "../src/hybridSearch";
-import type { RelatedEdge, RelatedEdgesExport, SearchEntry, TaxonomyExport } from "../src/types";
+import type { ProvenanceRelationEdge, RelatedEdge, RelatedEdgesExport, SearchEntry, TaxonomyExport } from "../src/types";
 
 const here = dirname(fileURLToPath(import.meta.url));
 // eval/dist/ から実行されるので2つ上がって web/ に戻る。
@@ -136,6 +137,82 @@ function main(): void {
 
   evaluateRelations(taxonomy, related);
   evaluateTypedRelations();
+  evaluateWebExportContract();
+}
+
+/**
+ * P1/P2安定化パス項目7: 「UI DTOと実際の画面表示は食い違えない」を、
+ * 実際にブラウザが使う変換コード（`dynamicTaxonomy.ts::expandRelations`）
+ * をこのevalスクリプトから直接呼んで確かめる——再実装した検査ロジックが
+ * 本物のコードとズレる心配が無い。
+ *
+ * `dependencies.json`/`morphisms.json`は1assertion=1行なので`assertionId`
+ * が一意であるべき——重複があれば、証拠層側で同じ辺が2つのassertionに
+ * 分裂したか、exportが2回分マージされて壊れている合図。
+ *
+ * `relations.json`→`expandRelations`の変換は1行から向き違いの2視点
+ * （broader/narrower、または同値なら両方向とも"equivalent"）を作る——
+ * 以前あった「向きを畳んだ後に元の(subject,object)を復元してサイドカーを
+ * 引く」という間接参照そのものは無くなったが、**その変換自体が正しく
+ * 両方向を作れているか**は依然として壊れうる。実データの全関係について、
+ * 両端から見て同じ`assertionId`が引けることを確かめる（A→B / B→Aの
+ * 双方向レグレッションガード）。
+ */
+function evaluateWebExportContract(): void {
+  const readArray = (name: string): unknown[] | null => {
+    try {
+      const raw = JSON.parse(readFileSync(resolve(webRoot, "public", name), "utf8"));
+      if (!Array.isArray(raw)) throw new Error("not an array");
+      return raw;
+    } catch {
+      console.log(`\nWeb export契約チェック: ${name} が無い/壊れているためスキップ`);
+      return null;
+    }
+  };
+
+  const checkUniqueAssertionIds = (name: string, ids: number[]): string[] => {
+    const seen = new Set<number>();
+    const dupes = new Set<number>();
+    for (const id of ids) {
+      if (seen.has(id)) dupes.add(id);
+      seen.add(id);
+    }
+    return dupes.size > 0 ? [`  ${name}: assertionId重複 ${dupes.size}件 (例: ${[...dupes].slice(0, 5).join(", ")})`] : [];
+  };
+
+  const deps = readArray("dependencies.json") as { assertionId: number }[] | null;
+  const morphisms = readArray("morphisms.json") as { id: number }[] | null;
+  const relations = readArray("relations.json") as ProvenanceRelationEdge[] | null;
+
+  const problems: string[] = [];
+  if (deps) problems.push(...checkUniqueAssertionIds("dependencies.json", deps.map((d) => d.assertionId)));
+  if (morphisms) problems.push(...checkUniqueAssertionIds("morphisms.json", morphisms.map((m) => m.id)));
+
+  if (relations) {
+    const byPhrase = expandRelations(relations);
+    let checkedPairs = 0;
+    let directionMismatches = 0;
+    for (const r of relations) {
+      checkedPairs++;
+      const fromSubject = byPhrase[r.subject]?.find((v) => v.other === r.object && v.assertionId === r.assertionId);
+      const fromObject = byPhrase[r.object]?.find((v) => v.other === r.subject && v.assertionId === r.assertionId);
+      if (!fromSubject || !fromObject) {
+        directionMismatches++;
+        if (directionMismatches <= 5) {
+          problems.push(`  relations.json: assertion #${r.assertionId} (${r.subject} ${r.kind} ${r.object}) が両方向から一貫して引けない`);
+        }
+      }
+    }
+    console.log(`\nWeb export契約チェック（実際のexpandRelationsを直接呼んで検証）`);
+    console.log(`  relations.json: ${checkedPairs}件中${checkedPairs - directionMismatches}件が両方向一致`);
+  }
+
+  if (problems.length > 0) {
+    console.log(`\nWeb export契約違反（${problems.length}件）:`);
+    for (const p of problems) console.log(p);
+  } else if (deps && morphisms && relations) {
+    console.log(`  dependencies.json/morphisms.jsonのassertionIdはすべて一意。`);
+  }
 }
 
 /**

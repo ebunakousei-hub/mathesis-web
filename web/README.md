@@ -870,16 +870,29 @@ assertion #123 (release ...)」はボタンで、クリックすると
 曖昧解決・入力ファイルの改変（ハッシュ不一致）を検出する——1回きりの
 確認ではなく、リリースのたびに回すゲートとして作った
 （`crates/mathesis-provenance/tests/verify_test.rs`に異常系のテストが
-一通り揃っている）。
+一通り揃っている）。**安定化パス（同日・第2版、`docs/P2_STATUS.md`）**
+以降、実際にCI/リリース時に叩くべき唯一のコマンドは
+`mathesis-provenance verify-release`——`verify`（上記）に加え、
+`dependencies.json`/`morphisms.json`/`relations.json`自身のハッシュ
+検証と、今のProvenanceStoreから再生成した内容との構造的一致（「古い
+コミット/リリースから生成されたexportがそのまま残っている」の検出）を
+1つのコマンド・1つの終了コードにまとめたもの
+（`crates/mathesis-provenance/src/release_gate.rs`、
+`tests/release_gate_test.rs`）。
 
-**レガシー互換モード / 開発時の可視化**: サイドカーが404（存在しない）
-なら黙って今までどおり表示する——これは意図的な後方互換動作。一方で
-404以外の失敗（形が壊れている、サーバエラー、パース失敗）は
-`util.ts::reportProvenanceIssue`で報告する: 本番ビルドでは
-`console.error`だけに留め閲覧者の画面は静かなまま、開発時
-（`import.meta.env.DEV`）だけ画面右下に警告バナーを出す。「サイドカーが
-無ければ動く」という互換性を、「壊れたリリースを黙って正常扱いにする」
-にしないための区別。
+**レガシー互換モード / 開発時の可視化**: `dependencies.json`/
+`morphisms.json`はP2以降レガシーの代替経路が無い必須ファイルなので、
+欠落・形式異常はどちらも`loadError`（全環境で見える表示）になる。
+`relations.json`（`taxonomy.aliases.json`/`taxonomy.papers.json`と同じ
+遅延読み込み系列）は404（旧リリースにファイルが無い）なら黙って
+今までどおり表示する——意図的な後方互換動作。一方で404以外の失敗
+（形が壊れている、サーバエラー、パース失敗）は`util.ts::reportProvenanceIssue`
+で報告する: 本番ビルドでは`console.error`だけに留め閲覧者の画面は
+静かなまま、開発時（`import.meta.env.DEV`）だけ画面右下に警告バナーを
+出す。「ファイルが無ければ動く」という互換性を、「壊れたリリースを
+黙って正常扱いにする」にしないための区別（`util.ts::assertArrayShape`
+が配列でないJSONを即座に例外にする——0件の正常なデータセットと
+壊れた形を取り違えない）。
 
 **まだやっていないこと**: レビューワークフロー（`ReviewDecision`は
 レガシーの`Accepted`を保存する器としてのみ機能し、実際のレビュー画面は

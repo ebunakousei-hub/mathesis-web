@@ -107,6 +107,56 @@ fn source_record_is_interned_by_provider_and_provider_id() {
     assert_eq!(store.source_record_count().unwrap(), 1);
 }
 
+/// P1/P2安定化パス項目8: 「同じprovider+同じID+同じrevision → 同じ行、
+/// 同じprovider+同じID+違うrevision → 別の行」——この2つは
+/// `source_record_is_interned_by_provider_and_provider_id`が既に確かめて
+/// いる「revisionを一切渡さない」場合の挙動とは別の軸で、外部レビュー
+/// (2026-09-05)が修正した「古いsource recordが黙って再利用される」
+/// 回帰がここに戻ってこないことを固定する。
+#[test]
+fn source_record_with_same_revision_is_interned_to_the_same_record() {
+    let store = ProvenanceStore::open_in_memory().unwrap();
+    let new = NewSourceRecord {
+        provider: "arxiv".into(),
+        provider_id: "2301.00001".into(),
+        provider_revision: Some("v2".into()),
+        retrieved_at_unix: None,
+        content_hash: None,
+        licence: None,
+        attribution: None,
+        raw_payload_uri: None,
+        adapter_name: "test".into(),
+        adapter_version: "0".into(),
+        parser_version: None,
+    };
+    let a = store.get_or_insert_source_record(&new).unwrap();
+    let b = store.get_or_insert_source_record(&new).unwrap();
+    assert_eq!(a, b);
+    assert_eq!(store.source_record_count().unwrap(), 1);
+}
+
+#[test]
+fn source_record_with_a_different_revision_is_a_different_record() {
+    let store = ProvenanceStore::open_in_memory().unwrap();
+    let base = NewSourceRecord {
+        provider: "arxiv".into(),
+        provider_id: "2301.00001".into(),
+        provider_revision: Some("v1".into()),
+        retrieved_at_unix: None,
+        content_hash: None,
+        licence: None,
+        attribution: None,
+        raw_payload_uri: None,
+        adapter_name: "test".into(),
+        adapter_version: "0".into(),
+        parser_version: None,
+    };
+    let v1 = store.get_or_insert_source_record(&base).unwrap();
+    let v2 = store.get_or_insert_source_record(&NewSourceRecord { provider_revision: Some("v2".into()), ..base }).unwrap();
+    assert_ne!(v1, v2, "違うrevisionは古いsource recordを再利用してはいけない");
+    assert_eq!(store.source_record_count().unwrap(), 2);
+}
+
 #[test]
 fn assertion_evidence_and_review_round_trip() {
     let store = ProvenanceStore::open_in_memory().unwrap();

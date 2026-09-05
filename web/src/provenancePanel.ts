@@ -91,6 +91,7 @@ function renderDetail(d: AssertionDetail): string {
             ? `<div class="prov-section-title">Review decisions (${d.reviewDecisions.length})</div><ul class="prov-review-list">${d.reviewDecisions.map(renderReview).join("")}</ul>`
             : ""
         }
+        <p class="prov-caveat">Traceable to a source ≠ independently reviewed ≠ formally verified ≠ mathematically true. This panel shows only where the claim above came from and how confident the extractor was — not whether it is correct.</p>
       </div>
     </form>`;
 }

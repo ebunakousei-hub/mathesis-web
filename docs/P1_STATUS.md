@@ -13,8 +13,13 @@
 > the evidence core (`mathesis-provenance web-export`) as required, primary
 > data, not an optional annotation layer. `judgments.provenance.json`/
 > `taxonomy.relations.provenance.json` still exist, but only as inputs to
-> `mathesis-provenance verify`'s integrity check — the browser no longer
-> fetches them.
+> the release gate's integrity check — the browser no longer fetches them.
+> **Stabilization-pass update:** the canonical release gate is now
+> `mathesis-provenance verify-release`, which runs this document's
+> `verify` checks *and* P2's web-export checks under one command and one
+> exit code — see `docs/P2_STATUS.md`'s "Stabilization pass" section.
+> `verify` itself is unchanged and still does exactly what this document
+> describes; `verify-release` is the wrapper to actually run.
 
 ## P1 now guarantees
 
@@ -55,8 +60,9 @@
   a working one unnoticed — but stays silent in production, so a visiting
   researcher never sees an internal-tooling warning.
 - **Reconciliation and verification are re-runnable, not one-time claims.**
-  `mathesis-provenance verify` is meant to run every time a release is
-  produced (a CI/release gate), not just once during development.
+  `mathesis-provenance verify-release` is meant to run every time a
+  release is produced (a CI/release gate), not just once during
+  development.
 
 ## P1 does not yet guarantee
 
@@ -96,8 +102,11 @@
   counts, and the provenance sidecar file table.
 - `web/README.md`'s "証拠層への追跡" section — how the sidecars reach the
   running application.
-- `crates/mathesis-provenance/src/verify.rs` — the completion gate itself;
-  `crates/mathesis-provenance/tests/verify_test.rs` — its adversarial test
-  coverage (wrong release, missing assertion, missing evidence, ambiguous
-  duplicate key, counts mismatch, input-file hash drift, manifest/DB
-  mismatch).
+- `crates/mathesis-provenance/src/verify.rs` — the P1 completion gate
+  itself; `crates/mathesis-provenance/tests/verify_test.rs` — its
+  adversarial test coverage (wrong release, missing assertion, missing
+  evidence, ambiguous duplicate key, counts mismatch, input-file hash
+  drift, manifest/DB mismatch).
+- `crates/mathesis-provenance/src/release_gate.rs` — the P2 half of the
+  combined `verify-release` command; `tests/release_gate_test.rs` for its
+  adversarial coverage. See `docs/P2_STATUS.md`.

@@ -47,6 +47,21 @@ export function unwrapLeanSymbols(statement: string): string {
  * 壊れたリリースを検出すべきなのは開発・デプロイ確認の場であって、
  * 一般の閲覧者に警告バナーを見せることではない。
  */
+/**
+ * P1/P2安定化パス項目6: 「壊れたexportを、空だが妥当なデータセットに
+ * 見せてはいけない」——`fetch`が200を返しても、中身が期待した形
+ * （配列）でなければ即座に投げる。呼び出し側の`try/catch`が拾い、
+ * 必須ファイル（`dependencies.json`/`morphisms.json`）なら`loadError`に、
+ * 任意ファイル（`relations.json`）なら`reportProvenanceIssue`に繋がる——
+ * どちらの経路でも「0件の正常なデータ」と「形が壊れている」を
+ * 取り違えない。
+ */
+export function assertArrayShape(value: unknown, label: string): asserts value is unknown[] {
+  if (!Array.isArray(value)) {
+    throw new Error(`${label}: expected a JSON array, got ${value === null ? "null" : typeof value}`);
+  }
+}
+
 let provenanceWarningBanner: HTMLElement | null = null;
 export function reportProvenanceIssue(message: string): void {
   console.error(`[provenance] ${message}`);

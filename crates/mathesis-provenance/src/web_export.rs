@@ -26,6 +26,8 @@ use crate::model::{EpistemicState, RelationAssertion, RelationKind};
 use crate::store::ProvenanceStore;
 use serde::Serialize;
 
+pub const WEB_EXPORT_VERSION: &str = env!("CARGO_PKG_VERSION");
+
 fn strip_prefix_id(prefix: &str, r: &str) -> Option<i64> {
     r.strip_prefix(prefix)?.parse().ok()
 }
@@ -452,5 +454,97 @@ mod tests {
         assert_eq!(grounded.confidence, None, "Groundedに1.0を捏造しない");
 
         assert_eq!(relations[0].status, "confirmed", "Confirmedを先に出す");
+    }
+
+    /// P1/P2安定化パス項目7: 「UI DTOとassertion detail exportは食い違えない」
+    /// を、手で選んだ1件だけでなく**生成された全件**について機械的に確かめる。
+    /// dependencies/morphisms/relationsを混ぜた現実的なフィクスチャに対し、
+    /// 各エントリの`assertionId`が実在し、`build_web_export`が付けた
+    /// `kind`/`origin`/`status`/`confidence`が、そのassertion自身の
+    /// predicate/epistemic_state/Evidence/ReviewDecisionと矛盾しないことを
+    /// 型ごとに横断して検査する。
+    #[test]
+    fn every_generated_edge_resolves_to_a_consistent_assertion() {
+        let (prov, release, source) = setup();
+        // 依存関係。
+        let dep_a = prov
+            .insert_assertion(&NewRelationAssertion {
+                subject_ref: "judgment:10".into(),
+                predicate: RelationKind::DependsOn,
+                object_ref: "judgment:11".into(),
+                epistemic_state: EpistemicState::Extracted,
+                score: None,
+                policy_version: None,
+                created_by_run_id: None,
+                supersedes_id: None,
+                release_id: release,
+                legacy_ref: Some("judgment_dependency:10:11".into()),
+            })
+            .unwrap();
+        prov.insert_evidence(&NewEvidence {
+            assertion_id: dep_a,
+            source_record_id: source,
+            locator: Some("f.lean:9".into()),
+            evidence_kind: EvidenceKind::SourceSpan,
+            extractor_or_model: None,
+            version: None,
+            input_hash: None,
+            output_hash: None,
+            metric_name: None,
+            metric_value: None,
+        })
+        .unwrap();
+        // 射(未承認・承認済み・却下の3種)と関係(confirmed/grounded)を混ぜる。
+        insert_morphism(&prov, release, source, RelationKind::Specializes, EpistemicState::Proposed, EvidenceKind::ModelOutput, None, false);
+        insert_morphism(&prov, release, source, RelationKind::EquivalentTo, EpistemicState::Proposed, EvidenceKind::ReviewerNote, Some("r"), true);
+        insert_morphism(&prov, release, source, RelationKind::Generalizes, EpistemicState::Rejected, EvidenceKind::ModelOutput, None, false);
+        insert_relation(&prov, release, source, "sweep-confirmed", Some("s1"), Some(0.9));
+        insert_relation(&prov, release, source, "sweep-grounded", Some("s2"), None);
+
+        let assertions = prov.list_assertions_for_release(release).unwrap();
+        let dependencies = build_dependency_edges(&assertions);
+        let morphisms = build_morphism_edges(&prov, &assertions).unwrap();
+        let relations = build_relation_edges(&prov, &assertions).unwrap();
+        assert_eq!(dependencies.len(), 1);
+        assert_eq!(morphisms.len(), 3);
+        assert_eq!(relations.len(), 2);
+
+        for d in &dependencies {
+            let assertion = prov.try_get_assertion(crate::model::AssertionId(d.assertion_id)).unwrap().expect("assertionId must resolve");
+            assert_eq!(assertion.predicate, RelationKind::DependsOn);
+            assert_eq!(assertion.subject_ref, format!("judgment:{}", d.from));
+            assert_eq!(assertion.object_ref, format!("judgment:{}", d.to));
+        }
+
+        for m in &morphisms {
+            let assertion = prov.try_get_assertion(crate::model::AssertionId(m.id)).unwrap().expect("assertionId must resolve");
+            assert_eq!(morphism_kind_str(assertion.predicate), Some(m.kind.as_str()));
+            let evidence = evidence_details_for(&prov, assertion.id).unwrap();
+            let review = review_decision_details_for(&prov, assertion.id).unwrap();
+            // originはEvidenceの種別から、statusはepistemic_state+ReviewDecisionから、
+            // それぞれ独立に再計算しても`build_morphism_edges`の出力と一致するはず
+            // ——ここがズレたら「DTOとdetail exportが食い違う」ことになる。
+            let expected_origin = if evidence.iter().any(|e| e.evidence_kind == "reviewer_note") { "manual" } else { "heuristic" };
+            assert_eq!(m.origin, expected_origin);
+            let expected_status = if assertion.epistemic_state == EpistemicState::Rejected {
+                "rejected"
+            } else if review.iter().any(|r| r.decision == "accept") {
+                "accepted"
+            } else {
+                "proposed"
+            };
+            assert_eq!(m.status, expected_status);
+        }
+
+        for r in &relations {
+            let assertion = prov.try_get_assertion(crate::model::AssertionId(r.assertion_id)).unwrap().expect("assertionId must resolve");
+            assert_eq!(relation_kind_str(assertion.predicate), Some(r.kind.as_str()));
+            let evidence = evidence_details_for(&prov, assertion.id).unwrap();
+            let has_model_output = evidence.iter().any(|e| e.evidence_kind == "model_output");
+            assert_eq!(r.status, if has_model_output { "confirmed" } else { "grounded" });
+            // confidenceが捏造されていないことの一般化: model_output Evidenceが
+            // 無いなら確信度はNoneでなければならない(逆に有るならSome)。
+            assert_eq!(r.confidence.is_some(), has_model_output);
+        }
     }
 }

@@ -46,6 +46,40 @@ pub struct ProvenanceManifest {
     pub counts: ManifestCounts,
 }
 
+/// `web_export.rs`が生成する3ファイルの形（`DependencyEdge`/`MorphismEdge`/
+/// `RelationEdge`のJSON表現）を意味のある形で変えたら上げる。トップレベルの
+/// 配列という形自体は変えない方針（`web/src`側のfetchを壊さないため）なので、
+/// このバージョンはファイル自体には埋め込まず、この`WebExportManifest`にだけ
+/// 記録する——`release_gate::verify_web_export`が唯一の実効的な強制ポイント。
+pub const WEB_EXPORT_SCHEMA_VERSION: u32 = 1;
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct WebExportCounts {
+    pub dependencies: usize,
+    pub morphisms: usize,
+    pub relations: usize,
+}
+
+/// `mathesis-provenance web-export`が自分の出力(`dependencies.json`/
+/// `morphisms.json`/`relations.json`)について自己申告するマニフェスト。
+/// `ProvenanceManifest`（`reconcile`が入力DBについて申告するもの）とは別物
+/// ——こちらは出力側の完全性を記録する。`output_files`は`InputFileHash`型を
+/// そのまま再利用する（`path`+`sha256`という形は入力・出力のどちらでも
+/// 意味が同じため、型を増やさない）。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WebExportManifest {
+    pub schema_version: u32,
+    pub release_tag: String,
+    pub release_id: i64,
+    pub release_git_commit: Option<String>,
+    pub web_export_version: String,
+    pub generated_at_unix: i64,
+    pub counts: WebExportCounts,
+    pub output_files: Vec<InputFileHash>,
+}
+
 pub fn sha256_file(path: &Path) -> anyhow::Result<String> {
     let bytes = std::fs::read(path).map_err(|e| anyhow::anyhow!("{}: {e}", path.display()))?;
     let mut hasher = Sha256::new();

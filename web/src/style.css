@@ -2458,6 +2458,15 @@ table.demo-table code {
   margin-top: 4px;
 }
 
+.prov-caveat {
+  margin: 14px 0 0;
+  padding-top: 10px;
+  border-top: 1px solid var(--panel-border);
+  color: var(--text-dim);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
 /* 開発時のみ表示（`util.ts::reportProvenanceIssue`）。本番ビルドには
    出ない——外部レビュー2026-09-05提案3、「壊れたリリースを黙って正常
    表示扱いにしない」の可視化先。 */

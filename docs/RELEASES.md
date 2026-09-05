@@ -42,7 +42,7 @@ From `crates/mathesis-taxonomy`'s export (`web/public/taxonomy.json`):
 | Clusters | 34,083 |
 | Ambiguous clusters | 1,334 |
 
-From `web/public/taxonomy.relations.json`:
+From `web/public/relations.json`:
 
 | Metric | Count |
 | --- | --- |
@@ -92,14 +92,20 @@ release-integrity gate.
 | `web/public/taxonomy.relations.provenance.json` | 114 KB | all 1,051 shipped (grounded/confirmed) relations — `Proposed` relations are excluded, matching what `relations.json` itself ships |
 | `web/public/assertions.json` | 4.4 MB | full per-assertion detail (predicate, subject/object, epistemic state, every Evidence row's kind/locator/source, review decisions, default-traversal eligibility) for all 8,969 referenced assertions — powers the Web app's provenance detail panel |
 | `web/public/provenance-manifest.json` | <1 KB | machine-readable record of how the two sidecar files above were produced: release id/tag, adapter name+version, a SHA-256 of each input database, generation timestamp, and counts |
+| `web/public/web-export-manifest.json` | <1 KB | P2 (`docs/P2_STATUS.md`): machine-readable record of how `dependencies.json`/`morphisms.json`/`relations.json` were produced — schema version, release id/tag/commit, `web_export_version`, a SHA-256 of each of the 3 output files (computed after writing), and their counts. Written by `mathesis-provenance web-export` itself, not by `reconcile`. |
 
 `mathesis-provenance reconcile` verifies 100% coverage before writing these
 files (non-zero exit otherwise) — as of this release, every one of the
 5,634 + 2,284 + 1,051 = 8,969 currently-displayed edges resolves to exactly
 one `RelationAssertion`.
 
-**Release gate**: `mathesis-provenance verify` re-checks this release's
-sidecars + manifest against the live `ProvenanceStore` (and, if given the
-original input databases, against their current SHA-256) — it is meant to
-run on every release, not just once. See `docs/P1_STATUS.md` for exactly
-what this does and doesn't guarantee.
+**Release gate**: `mathesis-provenance verify-release` is the single
+canonical gate — it runs P1's `verify` (sidecars + manifest against the
+live `ProvenanceStore` and, if given the original input databases, their
+current SHA-256) *and* P2's web-export check (the 3 edge files' hashes
+against `web-export-manifest.json`, plus a structural re-derivation
+comparison against the live store, which catches an export generated from
+a stale commit/DB state even if its recorded hash was recomputed to
+match). One nonzero exit code means the release is not publishable. See
+`docs/P1_STATUS.md` and `docs/P2_STATUS.md` for exactly what this does and
+doesn't guarantee.

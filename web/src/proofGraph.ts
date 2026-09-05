@@ -11,7 +11,7 @@ import {
   type ProofSearchResult,
 } from "./proofSearch";
 import type { ExportedGraphDependency, ExportedJudgment, ExportedMorphism, GraphExport } from "./types";
-import { escapeHtml, formatGeneratedAt, unwrapLeanSymbols } from "./util";
+import { assertArrayShape, escapeHtml, formatGeneratedAt, unwrapLeanSymbols } from "./util";
 
 const SEARCH_TOP_K = 25;
 
@@ -102,9 +102,15 @@ export class ProofGraphExplorer {
       if (!judgmentsResp.ok) throw new Error(`judgments.json: HTTP ${judgmentsResp.status}`);
       if (!dependenciesResp.ok) throw new Error(`dependencies.json: HTTP ${dependenciesResp.status}`);
       if (!morphismsResp.ok) throw new Error(`morphisms.json: HTTP ${morphismsResp.status}`);
-      this.data = (await judgmentsResp.json()) as GraphExport;
-      const dependencies = (await dependenciesResp.json()) as ExportedGraphDependency[];
-      const morphisms = (await morphismsResp.json()) as ExportedMorphism[];
+      const judgmentsJson: unknown = await judgmentsResp.json();
+      const dependenciesJson: unknown = await dependenciesResp.json();
+      const morphismsJson: unknown = await morphismsResp.json();
+      assertArrayShape((judgmentsJson as GraphExport)?.judgments, "judgments.json:judgments");
+      assertArrayShape(dependenciesJson, "dependencies.json");
+      assertArrayShape(morphismsJson, "morphisms.json");
+      this.data = judgmentsJson as GraphExport;
+      const dependencies = dependenciesJson as ExportedGraphDependency[];
+      const morphisms = morphismsJson as ExportedMorphism[];
       this.buildIndices(this.data, dependencies, morphisms);
     } catch (err) {
       console.error("Failed to load the proof graph:", err);

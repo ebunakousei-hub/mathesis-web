@@ -25,7 +25,7 @@ import type {
   SearchIndexColumns,
   TaxonomyShell,
 } from "./types";
-import { escapeHtml, formatGeneratedAt } from "./util";
+import { assertArrayShape, escapeHtml, formatGeneratedAt, reportProvenanceIssue } from "./util";
 
 type Tab = "fields" | "novel";
 type View = { tab: Tab; field: ExportedField | null; openCluster: number | null; query: string };
@@ -241,9 +241,19 @@ export class DynamicTaxonomyExplorer {
       }
       try {
         const resp = await fetch(`${import.meta.env.BASE_URL}relations.json`);
-        if (resp.ok) this.relations = expandRelations((await resp.json()) as ProvenanceRelationEdge[]);
+        if (resp.ok) {
+          const json: unknown = await resp.json();
+          // 404（旧リリースにファイルが無い）はレガシー互換で黙って諦める——
+          // 200なのに形が違う（配列でない）のは「壊れた/差し違えたリリース」の
+          // 合図なので、空データセットとして黙って進めず開発時に報告する
+          // （P1/P2安定化パス項目6: INVALID_RELEASEとVALIDを混同しない）。
+          assertArrayShape(json, "relations.json");
+          this.relations = expandRelations(json as ProvenanceRelationEdge[]);
+        } else if (resp.status !== 404) {
+          reportProvenanceIssue(`relations.json returned HTTP ${resp.status}`);
+        }
       } catch (err) {
-        console.error("Failed to load relations.json:", err);
+        reportProvenanceIssue(`relations.json failed to load or has an unexpected shape: ${err}`);
       }
       if (this.view.query.trim().length > 0) this.render();
     })();
@@ -894,7 +904,7 @@ export interface TypedRelationView {
  * specialization_ofは両端から見え方が違う——subject側からは「objectの方が
  * 広い」、object側からは「subjectの方が狭い」。
  */
-function expandRelations(edges: ProvenanceRelationEdge[]): Record<string, TypedRelationView[]> {
+export function expandRelations(edges: ProvenanceRelationEdge[]): Record<string, TypedRelationView[]> {
   const map: Record<string, TypedRelationView[]> = {};
   const push = (phrase: string, view: TypedRelationView) => {
     (map[phrase] ??= []).push(view);

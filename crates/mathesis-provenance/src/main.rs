@@ -5,11 +5,15 @@ use anyhow::{Context, Result};
 use mathesis_graph::GraphStore;
 use mathesis_provenance::assertion_export::export_assertion_details;
 use mathesis_provenance::legacy_adapter::{import_graph, import_taxonomy_relations, ADAPTER_NAME, ADAPTER_VERSION};
-use mathesis_provenance::manifest::{input_file_hash, ManifestCounts, ProvenanceManifest, SCHEMA_VERSION};
+use mathesis_provenance::manifest::{
+    input_file_hash, ManifestCounts, ProvenanceManifest, WebExportCounts, WebExportManifest, SCHEMA_VERSION,
+    WEB_EXPORT_SCHEMA_VERSION,
+};
 use mathesis_provenance::model::NewRelease;
 use mathesis_provenance::reconcile::{reconcile_graph, reconcile_taxonomy, JudgmentsProvenanceExport, RelationsProvenanceExport};
+use mathesis_provenance::release_gate::{print_web_export_failures, verify_web_export};
 use mathesis_provenance::verify::{verify_release, VerifyInputs};
-use mathesis_provenance::web_export::build_web_export;
+use mathesis_provenance::web_export::{build_web_export, WEB_EXPORT_VERSION};
 use mathesis_provenance::{stats, ProvenanceStore};
 use mathesis_taxonomy::store::TaxonomyStore;
 use std::path::PathBuf;
@@ -42,7 +46,18 @@ fn usage() -> ! {
          \x20     relations.json)を、証拠層DB**だけ**を入口に生成する——\n\
          \x20     mathesis-graph/mathesis-taxonomyのSQLiteは一切開かない。\n\
          \x20     kind/origin/status/rationale/confidenceはすべてEvidence/\n\
-         \x20     ReviewDecisionから再構成する（docs/P2_STATUS.md参照）。"
+         \x20     ReviewDecisionから再構成する（docs/P2_STATUS.md参照）。\n\
+         \x20     同じディレクトリに web-export-manifest.json（自身の出力の\n\
+         \x20     SHA-256・件数・schemaVersion）も書き出す。\n\
+         \x20 verify-release --manifest <path> --judgments-provenance <path> --relations-provenance <path>\n\
+         \x20                --provenance-db <path> --web-export-manifest <path> --web-export-dir <path>\n\
+         \x20                --release <tag> [--graph-db <path>] [--taxonomy-db <path>]\n\
+         \x20     P1のverify（サイドカーの完全性）とP2固有のweb-export検証\n\
+         \x20     （出力ファイルのハッシュ一致、および今のProvenanceStoreから\n\
+         \x20     再生成した内容との構造的一致——「古いコミット/リリースから\n\
+         \x20     生成されたexportがそのまま残っている」を検出する）を1つに\n\
+         \x20     まとめた、唯一の正式なリリースゲート。どちらか一方でも\n\
+         \x20     失敗すれば非ゼロ終了する。"
     );
     std::process::exit(1);
 }
@@ -63,6 +78,7 @@ fn main() -> Result<()> {
         Some("reconcile") => run_reconcile(&args[2..]),
         Some("verify") => run_verify(&args[2..]),
         Some("web-export") => run_web_export(&args[2..]),
+        Some("verify-release") => run_verify_release(&args[2..]),
         _ => usage(),
     }
 }
@@ -254,16 +270,104 @@ fn run_web_export(args: &[String]) -> Result<()> {
     let export = build_web_export(&prov, release.id)?;
 
     std::fs::create_dir_all(&out_dir)?;
-    std::fs::write(out_dir.join("dependencies.json"), serde_json::to_string(&export.dependencies)?)?;
-    std::fs::write(out_dir.join("morphisms.json"), serde_json::to_string(&export.morphisms)?)?;
-    std::fs::write(out_dir.join("relations.json"), serde_json::to_string(&export.relations)?)?;
+    let dependencies_path = out_dir.join("dependencies.json");
+    let morphisms_path = out_dir.join("morphisms.json");
+    let relations_path = out_dir.join("relations.json");
+    std::fs::write(&dependencies_path, serde_json::to_string(&export.dependencies)?)?;
+    std::fs::write(&morphisms_path, serde_json::to_string(&export.morphisms)?)?;
+    std::fs::write(&relations_path, serde_json::to_string(&export.relations)?)?;
+
+    // 出力ファイル自身のマニフェスト。書き終えた**後**にハッシュを取る
+    // ——「このバイト列を後で誰かが書き換えていないか」を`verify-release`が
+    // 確かめられるようにする。
+    let web_export_manifest = WebExportManifest {
+        schema_version: WEB_EXPORT_SCHEMA_VERSION,
+        release_tag: release_tag.clone(),
+        release_id: release.id.0,
+        release_git_commit: release.git_commit.clone(),
+        web_export_version: WEB_EXPORT_VERSION.to_string(),
+        generated_at_unix: SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs() as i64).unwrap_or(0),
+        counts: WebExportCounts {
+            dependencies: export.dependencies.len(),
+            morphisms: export.morphisms.len(),
+            relations: export.relations.len(),
+        },
+        output_files: vec![input_file_hash(&dependencies_path)?, input_file_hash(&morphisms_path)?, input_file_hash(&relations_path)?],
+    };
+    std::fs::write(out_dir.join("web-export-manifest.json"), serde_json::to_string_pretty(&web_export_manifest)?)?;
 
     println!(
-        "wrote {} dependencies, {} morphisms, {} relations to {}",
+        "wrote {} dependencies, {} morphisms, {} relations to {} (+ web-export-manifest.json)",
         export.dependencies.len(),
         export.morphisms.len(),
         export.relations.len(),
         out_dir.display(),
     );
+    Ok(())
+}
+
+fn run_verify_release(args: &[String]) -> Result<()> {
+    let manifest_path = PathBuf::from(require_flag(args, "--manifest")?);
+    let judgments_path = PathBuf::from(require_flag(args, "--judgments-provenance")?);
+    let relations_path = PathBuf::from(require_flag(args, "--relations-provenance")?);
+    let provenance_db = PathBuf::from(require_flag(args, "--provenance-db")?);
+    let web_export_manifest_path = PathBuf::from(require_flag(args, "--web-export-manifest")?);
+    let web_export_dir = PathBuf::from(require_flag(args, "--web-export-dir")?);
+    let release_tag = require_flag(args, "--release")?.to_string();
+    let graph_db = flag_value(args, "--graph-db").map(PathBuf::from);
+    let taxonomy_db = flag_value(args, "--taxonomy-db").map(PathBuf::from);
+
+    let manifest: ProvenanceManifest = serde_json::from_slice(
+        &std::fs::read(&manifest_path).with_context(|| format!("{manifest_path:?} を開けません"))?,
+    )
+    .with_context(|| format!("{manifest_path:?} のパースに失敗"))?;
+    let judgments_provenance: JudgmentsProvenanceExport = serde_json::from_slice(
+        &std::fs::read(&judgments_path).with_context(|| format!("{judgments_path:?} を開けません"))?,
+    )
+    .with_context(|| format!("{judgments_path:?} のパースに失敗"))?;
+    let relations_provenance: RelationsProvenanceExport = serde_json::from_slice(
+        &std::fs::read(&relations_path).with_context(|| format!("{relations_path:?} を開けません"))?,
+    )
+    .with_context(|| format!("{relations_path:?} のパースに失敗"))?;
+    let web_export_manifest: WebExportManifest = serde_json::from_slice(
+        &std::fs::read(&web_export_manifest_path).with_context(|| format!("{web_export_manifest_path:?} を開けません"))?,
+    )
+    .with_context(|| format!("{web_export_manifest_path:?} のパースに失敗"))?;
+    let prov = ProvenanceStore::open(&provenance_db).with_context(|| format!("{provenance_db:?} を開けません"))?;
+
+    let mut live_input_files = Vec::new();
+    if let Some(p) = &graph_db {
+        live_input_files.push(input_file_hash(p)?);
+    }
+    if let Some(p) = &taxonomy_db {
+        live_input_files.push(input_file_hash(p)?);
+    }
+    if live_input_files.is_empty() {
+        println!("note: --graph-db/--taxonomy-db not given, skipping input-file hash re-verification");
+    }
+
+    println!("--- P1: sidecar completeness (verify) ---");
+    let verify_report = verify_release(
+        &prov,
+        &VerifyInputs {
+            manifest: &manifest,
+            judgments_provenance: &judgments_provenance,
+            relations_provenance: &relations_provenance,
+            live_input_files: &live_input_files,
+        },
+    )?;
+    verify_report.print();
+
+    println!("--- P2: web-export integrity ---");
+    let web_export_failures = verify_web_export(&prov, &release_tag, &web_export_manifest, &web_export_dir)?;
+    print_web_export_failures(&web_export_failures);
+
+    if !verify_report.is_ok() || !web_export_failures.is_empty() {
+        anyhow::bail!(
+            "release verification failed — {} sidecar problem(s), {} web-export problem(s)",
+            verify_report.failures.len(),
+            web_export_failures.len()
+        );
+    }
     Ok(())
 }

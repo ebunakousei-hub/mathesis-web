@@ -17,6 +17,7 @@ pub mod manifest;
 pub mod model;
 pub mod reconcile;
 pub mod release;
+pub mod release_gate;
 pub mod review;
 pub mod source_record;
 pub mod stats;

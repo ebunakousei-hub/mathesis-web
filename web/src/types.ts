@@ -132,28 +132,33 @@ export interface AliasExport {
 }
 
 /**
- * 型付き関係（`taxonomy.relations.json`、別ファイル。アーキテクチャ.txt
- * 5.3の`Relation`——特殊化/同値）。`subject[i]`が`object[i]`の
- * `kind[i]`（"specialization_of" = subjectはobjectの特殊化、
- * "equivalent_to" = 同一概念の異なる定式化）。
+ * 型付き関係（`relations.json`、別ファイル。アーキテクチャ.txt 5.3の
+ * `Relation`——特殊化/同値）。P2（`docs/P2_STATUS.md`）以降、
+ * `mathesis-taxonomy`の`RelationStatus`を直接読むのではなく、
+ * `mathesis-provenance web-export`が証拠層（`RelationAssertion`+
+ * `Evidence`）から1件ずつ再構成して書き出す——`assertionId`が最初から
+ * 埋め込まれているので、`assertions.json`との突き合わせなしにこの1件だけで
+ * 出典まで辿れる。`kind`は"specialization_of"（subjectはobjectの特殊化）
+ * か"equivalent_to"（同一概念の異なる定式化）。
  *
- * **根拠文を持つものだけがここに来る**（Rust側`export.rs::
- * RelationsExport`が実装、統計のみで根拠文の無いProposedは含まれない）。
- * `status`は "confirmed"（分布統計と本文の一文が一致）か
- * "grounded"（本文の一文のみ）——どちらも「両経路が一致した／実際に
- * その一文がある」以上の確実性は主張しない。手動サンプルで確認した
- * 実測精度は約50%（当初36%、3回の的を絞った修正後、`relations.rs`
- * 冒頭コメント参照）——だからこそ`evidenceSentence`を必ず一緒に見せ、
- * 読者がその場で自分の目で判断できるようにする。
+ * **根拠文を持つものだけがここに来る**——統計のみで根拠文の無いProposedは
+ * 含まれない。`status`は"confirmed"（分布統計と本文の一文が一致）か
+ * "grounded"（本文の一文のみ）。`confidence`はConfirmedにしか無い実測値
+ * （invCLメトリック）——Groundedは`null`（旧`taxonomy.relations.json`が
+ * 出していた固定1.0のプレースホルダは、ここでは捏造しない）。手動サンプルで
+ * 確認した実測精度は約50%（当初36%、3回の的を絞った修正後、
+ * `relations.rs`冒頭コメント参照）——だからこそ`evidenceSentence`を必ず
+ * 一緒に見せ、読者がその場で自分の目で判断できるようにする。
  */
-export interface RelationsExport {
-  subject: string[];
-  object: string[];
-  kind: ("specialization_of" | "equivalent_to")[];
-  status: ("confirmed" | "grounded")[];
-  confidence: number[];
-  evidenceSentence: string[];
-  evidenceArxivId: string[];
+export interface ProvenanceRelationEdge {
+  assertionId: number;
+  subject: string;
+  object: string;
+  kind: "specialization_of" | "equivalent_to";
+  status: "confirmed" | "grounded";
+  confidence: number | null;
+  evidenceSentence: string;
+  evidenceArxivId: string;
 }
 
 export interface TaxonomyExport {
@@ -200,7 +205,15 @@ export interface ExportedJudgment {
   paperArxivId: string | null;
 }
 
+/**
+ * `dependencies.json`（`mathesis-provenance web-export`が証拠層から直接
+ * 生成、P2 `docs/P2_STATUS.md`）1件ぶん。以前は`judgments.json`
+ * （`GraphExport.dependencies`）に載っていたが、その場では常に
+ * `epistemic_state: extracted`という中身の解釈まで`mathesis-graph`が
+ * 決めていた——今はその解釈を証拠層のassertionから読む、別ファイルに移した。
+ */
 export interface ExportedGraphDependency {
+  assertionId: number;
   from: number;
   to: number;
 }
@@ -214,11 +227,18 @@ export interface ExportedGraphPaper {
 }
 
 /**
- * 層3の射（`morphisms`テーブル）。`ExportedGraphDependency`
+ * 層3の射（`morphisms.json`、`mathesis-provenance web-export`が証拠層から
+ * 直接生成、P2 `docs/P2_STATUS.md`）。`ExportedGraphDependency`
  * （証明本体が参照する判断、Phase 9）とは別物——含意・特殊化・一般化・
  * 同値という論理的な関係を表す。現状は`mathesis-importer --propose-morphisms`
  * がヒューリスティックで機械的に提案した`status: "proposed"`（未承認）候補
  * のみで、人間によるレビュー・承認はまだ行っていない。
+ *
+ * `id`は旧来の`mathesis-graph`側の射idではなく、このassertion自身のid——
+ * 1射につきassertionが必ず1件なので識別子として完全に代用でき、
+ * `assertions.json`（詳細パネル用）を`id`でそのまま引ける。`kind`/`origin`/
+ * `status`/`rationale`は`morphisms`テーブルの生の値ではなく、この
+ * assertionのEvidence/ReviewDecisionから再構成されたもの。
  */
 export interface ExportedMorphism {
   id: number;
@@ -228,28 +248,6 @@ export interface ExportedMorphism {
   origin: "manual" | "heuristic";
   status: "proposed" | "accepted" | "rejected";
   rationale: string | null;
-}
-
-/**
- * Phase 1 (ARCHITECTURE_NEXT.md, `mathesis-provenance`)の証拠層への追跡情報。
- * `judgments.json`/`taxonomy.relations.json`本体には無い追加のサイドカー
- * ファイルで、既存のexportの形は一切変えていない——`mathesis-provenance
- * reconcile`が生成し、`RelationAssertion`のidとリリースタグだけを持つ薄い
- * 索引。存在しなくても（フェッチに失敗しても）既存の画面は今までどおり
- * 動く前提で、あれば追加のツールチップ情報として使う。
- */
-export interface JudgmentsProvenanceExport {
-  releaseTag: string;
-  releaseGitCommit: string | null;
-  dependencies: { from: number; to: number; assertionId: number }[];
-  citations: { from: string; to: string; assertionId: number }[];
-  morphisms: { morphismId: number; assertionId: number }[];
-}
-
-export interface RelationsProvenanceExport {
-  releaseTag: string;
-  releaseGitCommit: string | null;
-  relations: { subject: string; object: string; kind: string; assertionId: number }[];
 }
 
 /**
@@ -288,6 +286,12 @@ export interface AssertionDetail {
   eligibleForDefaultTraversal: boolean;
 }
 
+/**
+ * `judgments.json`。P2（`docs/P2_STATUS.md`）以降、辺そのもの
+ * （`dependencies`/`morphisms`）はここには無い——別途`dependencies.json`/
+ * `morphisms.json`（`mathesis-provenance web-export`が証拠層から直接生成）
+ * を読む。ここに残るのはノード側のデータ（判断・論文）と件数だけ。
+ */
 export interface GraphExport {
   /** このJSONが書き出された時刻（UNIX秒）。TaxonomyExportと同型の対応。 */
   generatedAtUnix: number;
@@ -296,8 +300,6 @@ export interface GraphExport {
   morphismCount: number;
   papers: ExportedGraphPaper[];
   judgments: ExportedJudgment[];
-  dependencies: ExportedGraphDependency[];
-  morphisms: ExportedMorphism[];
 }
 
 /**

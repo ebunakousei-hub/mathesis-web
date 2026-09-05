@@ -107,6 +107,19 @@ impl ProvenanceStore {
         Ok(rows)
     }
 
+    /// リリース1件ぶんの全assertion。`web_export`はこれ**だけ**を入口にする
+    /// ——`mathesis-graph`/`mathesis-taxonomy`のSQLiteを開き直さない
+    /// （docs/P2_STATUS.md参照）。
+    pub fn list_assertions_for_release(&self, release: ReleaseId) -> Result<Vec<RelationAssertion>> {
+        let mut stmt = self.conn.prepare_cached(
+            "SELECT id, subject_ref, predicate, object_ref, epistemic_state, score, policy_version,
+                    created_by_run_id, supersedes_id, release_id, legacy_ref
+             FROM relation_assertions WHERE release_id = ?1 ORDER BY id",
+        )?;
+        let rows = stmt.query_map(params![release.0], Self::assertion_row)?.collect::<rusqlite::Result<Vec<_>>>()?;
+        Ok(rows)
+    }
+
     pub fn assertion_count(&self) -> Result<i64> {
         self.conn.query_row("SELECT COUNT(*) FROM relation_assertions", [], |r| r.get(0))
     }

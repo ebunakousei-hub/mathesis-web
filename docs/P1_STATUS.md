@@ -4,6 +4,17 @@
 > completion gate: `mathesis-provenance verify` (see below). This document
 > exists so Phase 1's scope is never overstated — provenance coverage is not
 > the same claim as mathematical correctness.
+>
+> **P2 update (same day, see [`docs/P2_STATUS.md`](P2_STATUS.md)):** the
+> "sidecar" architecture the bullet below describes — `web/` optionally
+> fetching a thin `*.provenance.json` pointer file that may be missing
+> without affecting the page — no longer applies to `dependencies`/
+> `morphisms`/typed concept relations. Those are now generated directly from
+> the evidence core (`mathesis-provenance web-export`) as required, primary
+> data, not an optional annotation layer. `judgments.provenance.json`/
+> `taxonomy.relations.provenance.json` still exist, but only as inputs to
+> `mathesis-provenance verify`'s integrity check — the browser no longer
+> fetches them.
 
 ## P1 now guarantees
 

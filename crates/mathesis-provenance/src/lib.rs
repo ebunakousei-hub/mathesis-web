@@ -22,6 +22,7 @@ pub mod source_record;
 pub mod stats;
 pub mod store;
 pub mod verify;
+pub mod web_export;
 
 pub use error::{ProvenanceError, ProvenanceResult, ValidationError};
 pub use model::{

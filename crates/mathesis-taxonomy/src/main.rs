@@ -76,14 +76,16 @@ fn usage() -> ! {
          \x20        クラスタからMSC未申告の候補へコードを伝播、MSC対応の無い\n\
          \x20        クラスタを新語彙候補として報告する（Phase 5）。事前に `cluster` が必要。\n\
          export:  Phase 1〜5の出力をWeb版Explorer用の静的JSONへ書き出す\n\
-         \x20        （Phase 6）。事前に `align` が必要。出力は6ファイル:\n\
+         \x20        （Phase 6）。事前に `align` が必要。出力は5ファイル:\n\
          \x20        <output.json> 本体、<output>.related.json（近傍の辺）、\n\
          \x20        <output>.papers.json（概念ごとの出典論文、題名つき）、\n\
-         \x20        <output>.aliases.json（表記ゆれ）、<output>.relations.json\n\
-         \x20        （型付き関係、根拠文つきのConfirmed/Groundedのみ——`relations`\n\
-         \x20        が未実行なら空）、<output>.head.json（文書頻度上位件だけの\n\
-         \x20        ヘッドシャード、フル索引の読み込み中の即答用）。本体・\n\
-         \x20        ヘッドシャード以外はブラウザが検索時に遅延読み込みする。\n\
+         \x20        <output>.aliases.json（表記ゆれ）、<output>.head.json\n\
+         \x20        （文書頻度上位件だけのヘッドシャード、フル索引の読み込み中の\n\
+         \x20        即答用）。本体・ヘッドシャード以外はブラウザが検索時に\n\
+         \x20        遅延読み込みする。型付き関係（根拠文つきのConfirmed/\n\
+         \x20        Grounded）はP2以降ここでは書き出さない——\n\
+         \x20        `mathesis-provenance web-export`が証拠層から\n\
+         \x20        relations.jsonを直接生成する（docs/P2_STATUS.md）。\n\
          search:  exact / same concept / specialization / related の4段階で\n\
          \x20        概念候補を検索する（Phase 7）。クエリが既知の候補と完全一致しない\n\
          \x20        場合はOllamaでその場embedding化してrelated段階に使う\n\
@@ -1211,16 +1213,12 @@ fn run_export(args: &[String]) -> Result<()> {
     std::fs::write(&alias_path, &aliases_json)
         .with_context(|| format!("{} への書き込みに失敗しました", alias_path.display()))?;
 
-    // 型付き関係（`relations` コマンドが事前に計算済み）。根拠文を持つ
-    // Confirmed/Groundedだけを出す——理由は`export.rs::RelationsExport`
-    // のコメント。`relations`が未実行のDBでも動くよう、0件なら空の
-    // ファイルを書くだけにする。
-    let relations_path = sidecar_output_path(&output_path, "relations");
-    let all_relations = store.load_relations()?;
-    let relations_export = export::build_relations_export(&all_relations);
-    let relations_json = serde_json::to_string(&relations_export)?;
-    std::fs::write(&relations_path, &relations_json)
-        .with_context(|| format!("{} への書き込みに失敗しました", relations_path.display()))?;
+    // `relations.json`（型付き関係、根拠文を持つConfirmed/Groundedだけ）は
+    // もうここでは書かない——P2（`docs/P2_STATUS.md`）以降、
+    // `mathesis-provenance web-export`が証拠層から直接生成する。
+    // `export::build_relations_export`/`RelationsExport`自体は残っている
+    // （テスト済みの純粋関数として、他の用途に使える形で）が、web/publicへの
+    // 書き出しはこのコマンドの役目ではなくなった。
 
     // ヘッドシャード（診断④「配信の不可分性」への対応）。文書頻度上位
     // `export::HEAD_SHARD_SIZE`件だけの小さな索引で、ブラウザは
@@ -1262,13 +1260,6 @@ fn run_export(args: &[String]) -> Result<()> {
         aliases.aliases.iter().map(Vec::len).sum::<usize>(),
         alias_path.display(),
         aliases_json.len()
-    );
-    println!(
-        "型付き関係 {}件（根拠文あり、全{}件中）を {} に書き出しました（{}バイト、検索時に遅延読み込みされる）",
-        relations_export.subject.len(),
-        all_relations.len(),
-        relations_path.display(),
-        relations_json.len()
     );
     println!(
         "ヘッドシャード（文書頻度上位{}件）を {} に書き出しました（{}バイト、フル索引の読み込み中に即答用）",

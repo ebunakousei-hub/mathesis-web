@@ -536,14 +536,11 @@ export class LineageView {
       const statusBadge = `<span class="lin-chip-status lin-chip-status-${escapeHtml(m.status)}" title="${escapeHtml(t(hintKey))}">${escapeHtml(t(badgeKey))}</span>`;
       const rationale = m.rationale ? `${t(hintKey)} — ${t("morphismRationaleLabel")}: ${m.rationale}` : t(hintKey);
       chip.title = rationale;
-      // Phase 1 (`mathesis-provenance`)追跡情報。無ければ何も足さない——
-      // 既存の見た目・挙動は変わらない。詳細は`provenancePanel.ts`の
-      // ダイアログで見せる——チップ本体のクリック（再root）を邪魔しない
-      // よう別ボタンにする。
-      const provenance = this.graph.morphismProvenance?.get(m.id);
-      const provenanceBadge = provenance
-        ? `<span class="lin-chip-provenance" title="assertion #${provenance.assertionId} (release ${escapeHtml(provenance.releaseTag)}) — click for details" data-assertion-id="${provenance.assertionId}">ⓘ</span>`
-        : "";
+      // P2（`docs/P2_STATUS.md`）以降、`m.id`は証拠層のRelationAssertion id
+      // そのもの——`morphisms.json`自体が証拠層から生成されるので、以前と
+      // 違い欠けることがない。詳細は`provenancePanel.ts`のダイアログで
+      // 見せる——チップ本体のクリック（再root）を邪魔しないよう別ボタンにする。
+      const provenanceBadge = `<span class="lin-chip-provenance" title="assertion #${m.id} — click for details" data-assertion-id="${m.id}">ⓘ</span>`;
       chip.innerHTML = `<span class="lin-chip-rel">${escapeHtml(t(RELATION_LABEL_KEY[m.kind]))}</span>${escapeHtml(other?.name ?? `#${otherId}`)}${statusBadge}${provenanceBadge}`;
       chip.onclick = (ev) => {
         const target = ev.target as HTMLElement;

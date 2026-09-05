@@ -10,8 +10,8 @@ import {
   type ProofSearchIndex,
   type ProofSearchResult,
 } from "./proofSearch";
-import type { ExportedJudgment, ExportedMorphism, GraphExport, JudgmentsProvenanceExport } from "./types";
-import { escapeHtml, formatGeneratedAt, reportProvenanceIssue, unwrapLeanSymbols } from "./util";
+import type { ExportedGraphDependency, ExportedJudgment, ExportedMorphism, GraphExport } from "./types";
+import { escapeHtml, formatGeneratedAt, unwrapLeanSymbols } from "./util";
 
 const SEARCH_TOP_K = 25;
 
@@ -41,7 +41,6 @@ export class ProofGraphExplorer {
   private usedBy = new Map<number, number[]>();
   private byFile = new Map<string, ExportedJudgment[]>();
   private morphismsOf = new Map<number, ExportedMorphism[]>();
-  private morphismProvenance = new Map<number, { assertionId: number; releaseTag: string }>();
   private searchIndex: ProofSearchIndex | null = null;
   /**
    * 系譜ビュー。判断1件を選んだときの主役——依存の鎖を図と概略の両方で出す。
@@ -82,44 +81,39 @@ export class ProofGraphExplorer {
     this.render();
   }
 
+  /**
+   * `judgments.json`（判断・論文のノードデータ）に加え、`dependencies.json`/
+   * `morphisms.json`（P2、`docs/P2_STATUS.md`——`mathesis-provenance
+   * web-export`が証拠層から直接生成する辺そのもの）を読む。以前はここで
+   * `judgments.json`自身の`dependencies`/`morphisms`配列を読み、追加で
+   * `judgments.provenance.json`という薄いサイドカーを突き合わせて
+   * assertion idを引いていたが、辺の中身自体を証拠層から生成するように
+   * なった今、両者を1回のfetchに統合できる——3ファイルとも欠けたり壊れたり
+   * すれば表示できる辺が無いという意味で対等に必須なので、まとめて
+   * `loadError`にする。
+   */
   private async load(): Promise<void> {
     try {
-      const resp = await fetch(`${import.meta.env.BASE_URL}judgments.json`);
-      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-      this.data = (await resp.json()) as GraphExport;
-      this.buildIndices(this.data);
+      const [judgmentsResp, dependenciesResp, morphismsResp] = await Promise.all([
+        fetch(`${import.meta.env.BASE_URL}judgments.json`),
+        fetch(`${import.meta.env.BASE_URL}dependencies.json`),
+        fetch(`${import.meta.env.BASE_URL}morphisms.json`),
+      ]);
+      if (!judgmentsResp.ok) throw new Error(`judgments.json: HTTP ${judgmentsResp.status}`);
+      if (!dependenciesResp.ok) throw new Error(`dependencies.json: HTTP ${dependenciesResp.status}`);
+      if (!morphismsResp.ok) throw new Error(`morphisms.json: HTTP ${morphismsResp.status}`);
+      this.data = (await judgmentsResp.json()) as GraphExport;
+      const dependencies = (await dependenciesResp.json()) as ExportedGraphDependency[];
+      const morphisms = (await morphismsResp.json()) as ExportedMorphism[];
+      this.buildIndices(this.data, dependencies, morphisms);
     } catch (err) {
-      console.error("Failed to load judgments.json:", err);
+      console.error("Failed to load the proof graph:", err);
       this.loadError = true;
-    }
-    // Phase 1 (`mathesis-provenance`)の追跡サイドカー。無くても/失敗しても
-    // 既存の画面は今までどおり動く（レガシー互換モード）——単にこのMapが
-    // 空のままになるだけ。ただし404（サイドカーがそもそも無い旧リリース）
-    // と、それ以外の失敗（サーバエラー・壊れたJSON）は区別する: 後者は
-    // 「本来あるはずの追跡情報が壊れている」ことの合図なので
-    // `reportProvenanceIssue`で報告する（開発時は画面にも警告、外部レビュー
-    // 2026-09-05提案3）。
-    try {
-      const resp = await fetch(`${import.meta.env.BASE_URL}judgments.provenance.json`);
-      if (resp.ok) {
-        const prov = (await resp.json()) as JudgmentsProvenanceExport;
-        if (!Array.isArray(prov.morphisms) || typeof prov.releaseTag !== "string") {
-          reportProvenanceIssue("judgments.provenance.json has an unexpected shape (missing morphisms[] or releaseTag)");
-        } else {
-          for (const m of prov.morphisms) {
-            this.morphismProvenance.set(m.morphismId, { assertionId: m.assertionId, releaseTag: prov.releaseTag });
-          }
-        }
-      } else if (resp.status !== 404) {
-        reportProvenanceIssue(`judgments.provenance.json returned HTTP ${resp.status}`);
-      }
-    } catch (err) {
-      reportProvenanceIssue(`judgments.provenance.json failed to load: ${err}`);
     }
     this.render();
   }
 
-  private buildIndices(d: GraphExport): void {
+  private buildIndices(d: GraphExport, dependencies: ExportedGraphDependency[], morphisms: ExportedMorphism[]): void {
     for (const j of d.judgments) {
       this.judgmentById.set(j.id, j);
       const list = this.byFile.get(j.sourceFile) ?? [];
@@ -129,7 +123,7 @@ export class ProofGraphExplorer {
     for (const list of this.byFile.values()) {
       list.sort((a, b) => a.sourceLine - b.sourceLine);
     }
-    for (const dep of d.dependencies) {
+    for (const dep of dependencies) {
       const from = this.dependsOn.get(dep.from) ?? [];
       from.push(dep.to);
       this.dependsOn.set(dep.from, from);
@@ -137,7 +131,7 @@ export class ProofGraphExplorer {
       to.push(dep.from);
       this.usedBy.set(dep.to, to);
     }
-    for (const m of d.morphisms) {
+    for (const m of morphisms) {
       const srcList = this.morphismsOf.get(m.src) ?? [];
       srcList.push(m);
       this.morphismsOf.set(m.src, srcList);
@@ -149,7 +143,7 @@ export class ProofGraphExplorer {
     }
     // 識別子のトークン分割は判断1,431件ぶん——キー入力のたびにやり直す
     // 必要は無いので、読み込み時に一度だけ索引にしておく。
-    this.searchIndex = buildProofSearchIndex(d.judgments, d.dependencies, d.morphisms);
+    this.searchIndex = buildProofSearchIndex(d.judgments, dependencies, morphisms);
 
     // 各判断から下へ伸びる依存鎖の最長の長さ。根に依らない量なので、
     // 判断を選ぶたびにではなく、ここで4,797辺ぶん一度だけ計算する。
@@ -158,10 +152,6 @@ export class ProofGraphExplorer {
       dependsOn: this.dependsOn,
       usedBy: this.usedBy,
       morphismsOf: this.morphismsOf,
-      // 同じMap参照を渡す——judgments.provenance.jsonの取得は`load()`側で
-      // 並行して進み、この時点ではまだ空のことがある。後から埋まっても
-      // 参照は共有されているので、次のrender()から反映される。
-      morphismProvenance: this.morphismProvenance,
     };
     const chainDepth = computeChainDepths(this.dependsOn, this.judgmentById.keys());
     this.lineageView = new LineageView(this.lineageRoot, graph, chainDepth, {

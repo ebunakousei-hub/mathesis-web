@@ -16,6 +16,9 @@ Lean/Coq の証明支援系や arXiv から数学的知識を構造化し、検�
 - **Phase 1が今どこまで保証しているか**: [docs/P1_STATUS.md](docs/P1_STATUS.md)
   （証拠層の完全性ゲート`mathesis-provenance verify`が何を検証済みで、
   何がまだ保証されていないかを明記）
+- **Phase 2: Web読み取りモデルの生成元**: [docs/P2_STATUS.md](docs/P2_STATUS.md)
+  （`dependencies.json`/`morphisms.json`/`relations.json`を証拠層から
+  直接生成するようになった変更、2026-09-05）
 
 このファイルはルート直下のクレート構成の見取り図。各クレートの詳細な
 設計判断は各 `src/lib.rs` 冒頭のドキュメントコメントを参照。

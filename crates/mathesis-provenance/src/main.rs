@@ -9,6 +9,7 @@ use mathesis_provenance::manifest::{input_file_hash, ManifestCounts, ProvenanceM
 use mathesis_provenance::model::NewRelease;
 use mathesis_provenance::reconcile::{reconcile_graph, reconcile_taxonomy, JudgmentsProvenanceExport, RelationsProvenanceExport};
 use mathesis_provenance::verify::{verify_release, VerifyInputs};
+use mathesis_provenance::web_export::build_web_export;
 use mathesis_provenance::{stats, ProvenanceStore};
 use mathesis_taxonomy::store::TaxonomyStore;
 use std::path::PathBuf;
@@ -35,7 +36,13 @@ fn usage() -> ! {
          \x20        --provenance-db <path> [--graph-db <path>] [--taxonomy-db <path>]\n\
          \x20     reconcileが書き出したサイドカー+マニフェストを、証拠層DB本体および\n\
          \x20     (指定すれば)元の入力DBと突き合わせる完全性ゲート。CI/リリースゲート\n\
-         \x20     として繰り返し実行する想定——1件でも鎖が切れていれば非ゼロ終了する。"
+         \x20     として繰り返し実行する想定——1件でも鎖が切れていれば非ゼロ終了する。\n\
+         \x20 web-export --db <path> --release <tag> --out-dir <path>\n\
+         \x20     P2: web/が実際に表示する辺(dependencies.json/morphisms.json/\n\
+         \x20     relations.json)を、証拠層DB**だけ**を入口に生成する——\n\
+         \x20     mathesis-graph/mathesis-taxonomyのSQLiteは一切開かない。\n\
+         \x20     kind/origin/status/rationale/confidenceはすべてEvidence/\n\
+         \x20     ReviewDecisionから再構成する（docs/P2_STATUS.md参照）。"
     );
     std::process::exit(1);
 }
@@ -55,6 +62,7 @@ fn main() -> Result<()> {
         Some("stats") => run_stats(&args[2..]),
         Some("reconcile") => run_reconcile(&args[2..]),
         Some("verify") => run_verify(&args[2..]),
+        Some("web-export") => run_web_export(&args[2..]),
         _ => usage(),
     }
 }
@@ -230,5 +238,32 @@ fn run_verify(args: &[String]) -> Result<()> {
     if !report.is_ok() {
         anyhow::bail!("release verification failed — {} check(s) failed", report.failures.len());
     }
+    Ok(())
+}
+
+fn run_web_export(args: &[String]) -> Result<()> {
+    let db = PathBuf::from(require_flag(args, "--db")?);
+    let release_tag = require_flag(args, "--release")?.to_string();
+    let out_dir = PathBuf::from(require_flag(args, "--out-dir")?);
+
+    let prov = ProvenanceStore::open(&db).with_context(|| format!("{db:?} を開けません"))?;
+    let release = prov
+        .get_release_by_tag(&release_tag)?
+        .with_context(|| format!("release '{release_tag}' not found — run import-legacy first"))?;
+
+    let export = build_web_export(&prov, release.id)?;
+
+    std::fs::create_dir_all(&out_dir)?;
+    std::fs::write(out_dir.join("dependencies.json"), serde_json::to_string(&export.dependencies)?)?;
+    std::fs::write(out_dir.join("morphisms.json"), serde_json::to_string(&export.morphisms)?)?;
+    std::fs::write(out_dir.join("relations.json"), serde_json::to_string(&export.relations)?)?;
+
+    println!(
+        "wrote {} dependencies, {} morphisms, {} relations to {}",
+        export.dependencies.len(),
+        export.morphisms.len(),
+        export.relations.len(),
+        out_dir.display(),
+    );
     Ok(())
 }

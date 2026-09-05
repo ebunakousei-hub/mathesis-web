@@ -12,7 +12,7 @@ import type { TypedRelationView } from "./dynamicTaxonomy";
  * 意味が無い」。①（文脈ベクトル）と②（型付き関係）が実装された今、
  * 検索結果の各概念について、実際に意味のある**距離**（コサイン類似度、
  * `taxonomy.related.json`）と**向き**（特殊化/同値、
- * `taxonomy.relations.json`）を持つ小さな近傍グラフを描ける。
+ * `relations.json`）を持つ小さな近傍グラフを描ける。
  *
  * 全概念72,632件を一度に描く「銀河」は意図的に作らない——大半の辺が
  * 描画されないまま重なるだけの「毛玉」になることが視覚化の定石として
@@ -121,14 +121,20 @@ function collectSubgraph(params: BuildConceptMapParams): { nodes: Set<string>; e
     }
     for (const rel of params.relations[phrase] ?? []) {
       nodes.add(rel.other);
+      // Groundedは根拠文はあるが数値の確信度を持たない（Confirmedにしか
+      // 無い実測値——`docs/P2_STATUS.md`、捏造した1.0を読者に見せない
+      // ための仕様）。ここでの重みは画面には出さないレイアウト用の内部値
+      // なので、無ければ最大重み1.0を使う——これは「確信度1.0」という
+      // 事実の主張ではなく、単に力学レイアウトの既定太さでしかない。
+      const weight = rel.confidence ?? 1.0;
       if (rel.relation === "equivalent") {
-        addEdge(phrase, rel.other, "equivalent", rel.confidence);
+        addEdge(phrase, rel.other, "equivalent", weight);
       } else if (rel.relation === "broader") {
         // phraseはrel.otherの特殊化（phrase ⊂ other）。
-        addEdge(phrase, rel.other, "specialization", rel.confidence);
+        addEdge(phrase, rel.other, "specialization", weight);
       } else {
         // rel.relation === "narrower": otherがphraseの特殊化。
-        addEdge(rel.other, phrase, "specialization", rel.confidence);
+        addEdge(rel.other, phrase, "specialization", weight);
       }
     }
   };

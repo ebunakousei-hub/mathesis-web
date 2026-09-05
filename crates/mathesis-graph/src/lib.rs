@@ -40,7 +40,7 @@ pub mod store;
 pub mod strategy;
 
 pub use error::{GraphError, GraphResult, ValidationError};
-pub use export::{build_export, ExportedDependency, ExportedJudgment, ExportedPaper, GraphExport};
+pub use export::{build_export, ExportedJudgment, ExportedPaper, GraphExport};
 pub use failed_attempt::{
     FailedAttemptId, FailedAttemptRecord, FailurePattern, NewFailedAttempt,
 };

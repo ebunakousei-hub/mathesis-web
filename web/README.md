@@ -635,7 +635,7 @@ modular forms / zeta function / galois group ——数論幾何そのもの—�
 近傍数kを12へ上げても変わらない（配信量が15.5MB→26.7MBに増えるだけ）
 ことを以前実測済み。関係の**種類**を持たない限りこれが上限に近い。
 
-## 型付き関係（`relations.rs` / `taxonomy.relations.json`）
+## 型付き関係（`relations.rs` / `relations.json`）
 
 「特殊化」段階（`search.rs::is_specialization`）は文字列包含だけの判定で、
 `quantum group`を`group`の特殊化として返す一方、楕円曲線⊂アーベル
@@ -660,7 +660,10 @@ function of ..." のような性質の主張を分類関係と誤認）と「主
 （構文解析なしには真の主語を特定できない）——`relations.rs`冒頭に実例
 つきで明記した既知の限界。だからこそ**根拠文の無いProposed（約10万件）
 はWebへ出さない**——Confirmed/Grounded（根拠文つき）だけを
-`taxonomy.relations.json`として書き出し、検索結果に「より一般的
+`relations.json`として書き出し（P2以降`mathesis-provenance web-export`が
+証拠層から直接生成する。`taxonomy.relations.json`という同名ファイルを
+`mathesis-taxonomy export`自身が書いていた時期があったが、
+`docs/P2_STATUS.md`の変更で廃止した）、検索結果に「より一般的
 な概念」「より特殊な概念」「同値の可能性がある概念」として表示、必ず
 根拠文とarXivリンクを併記して読者がその場で判断できるようにしてある。
 
@@ -824,15 +827,25 @@ relations.json`はどちらも①②の対応で既にexportされていたも�
 
 ## 証拠層への追跡（Phase 1, `mathesis-provenance`、2026-09-05）
 
-ARCHITECTURE_NEXT.md（証拠ベースの再設計）のPhase 1で、`judgments.json`の
-依存関係・射と`taxonomy.relations.json`の型付き関係それぞれに、証拠層
+ARCHITECTURE_NEXT.md（証拠ベースの再設計）のPhase 1で、判断グラフの
+依存関係・射と概念タクソノミーの型付き関係それぞれに、証拠層
 （`crates/mathesis-provenance`が持つ`RelationAssertion`/`Evidence`/
-`SourceRecord`/`Release`）への追跡情報を足した。既存の2ファイルの形は
-一切変えていない——`mathesis-provenance reconcile`が別途4つのサイドカー
-（`judgments.provenance.json`/`taxonomy.relations.provenance.json`/
-`assertions.json`/`provenance-manifest.json`）を書き出し、フロントエンド
-がこれを追加でfetchするだけ。サイドカーが無い/フェッチに失敗しても、
-画面は今までどおり動く（後述の「レガシー互換モード」）。
+`SourceRecord`/`Release`）への追跡情報を足した。
+
+**この節はPhase 1時点のアーキテクチャの記録**——最初は`judgments.json`/
+`taxonomy.relations.json`という既存2ファイルの形を一切変えず、
+`mathesis-provenance reconcile`が別途サイドカー
+（`judgments.provenance.json`/`taxonomy.relations.provenance.json`）を
+書き出し、フロントエンドが追加でfetchして突き合わせる方式だった。
+**Phase 2（`docs/P2_STATUS.md`）でこの方式は終わった**——今は
+`dependencies.json`/`morphisms.json`/`relations.json`を
+`mathesis-provenance web-export`が証拠層**だけ**を入口に直接生成し、
+`mathesis-graph`/`mathesis-taxonomy`はそれらの辺を一切書き出さない。
+以下の「完全性ゲート」「まだやっていないこと」は今も有効だが、
+「レガシー互換モード」の節（サイドカーが無くても動く）は
+`judgments.provenance.json`/`taxonomy.relations.provenance.json`
+（今は`verify`専用の内部ファイル）にのみ当てはまる——
+`dependencies.json`等はもう「無くてもいい追加情報」ではなく必須データ。
 
 **Provenanceボタンとassertion詳細パネル**（外部レビューの2回目、
 2026-09-05）: 射チップと型付き関係の根拠段落にある「Provenance:
@@ -846,8 +859,8 @@ assertion #123 (release ...)」はボタンで、クリックすると
 主義で、ネイティブ`<dialog>`をそのまま使う。
 
 **完全性ゲート**（同、2026-09-05）: `mathesis-provenance reconcile`は
-書き出す前に、`judgments.json`/`taxonomy.relations.json`が今表示して
-いる辺**全件**が証拠層の`RelationAssertion`へ実際に引けるかを検証する
+書き出す前に、`mathesis-graph`/`mathesis-taxonomy`の元データが持つ辺
+**全件**が証拠層の`RelationAssertion`へ実際に引けるかを検証する
 （2026-09-05時点のv0-baseline: 依存関係5,634/5,634・射2,284/2,284・
 型付き関係1,051/1,051、全件一致）。1件でも引けなければ非ゼロ終了する。
 さらに`mathesis-provenance verify`は、`provenance-manifest.json`
@@ -873,8 +886,9 @@ assertion #123 (release ...)」はボタンで、クリックすると
 無い）、型付きエンティティカタログ（`subject_ref`/`object_ref`は
 `"kind:id"`形式のタグ付き文字列で、ARCHITECTURE_NEXT.md §5.2の正式な
 カタログではない）、Lean elaborator由来の`verified`状態。詳細は
-`docs/P1_STATUS.md`（Phase 1が今どこまで保証しているか）と
-`docs/DATA_DICTIONARY.md`の「Known limitations」参照。
+`docs/P1_STATUS.md`（Phase 1が今どこまで保証しているか）、
+`docs/P2_STATUS.md`（Web読み取りモデルを証拠層から直接生成する変更、
+2026-09-05）、`docs/DATA_DICTIONARY.md`の「Known limitations」参照。
 
 ## 今後の課題（意図的に今回は着手していない）
 

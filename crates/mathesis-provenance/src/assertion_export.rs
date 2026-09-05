@@ -54,8 +54,51 @@ pub struct AssertionDetail {
     pub eligible_for_default_traversal: bool,
 }
 
-fn is_eligible_for_default_traversal(state: EpistemicState) -> bool {
+/// ARCHITECTURE_NEXT.md §7の既定トラバース方針("observed formal dependencies
+/// and reviewed semantic assertions; proposed edges are opt-in")の判定。
+/// `web_export`もこれを再利用する——「詳細パネルで見る既定トラバース対象か」と
+/// 「一覧に既定で出すか」が別の基準になってはいけない。
+pub(crate) fn is_eligible_for_default_traversal(state: EpistemicState) -> bool {
     matches!(state, EpistemicState::Observed | EpistemicState::Reviewed | EpistemicState::Verified)
+}
+
+/// 1件のassertionのEvidence行をすべて`EvidenceDetail`へ組み立てる。
+/// `export_assertion_details`（`assertions.json`用）と`web_export`
+/// （`docs/P2_STATUS.md`、`kind`/`origin`/`status`/`confidence`の再構成に使う）
+/// の両方から呼ばれる——2箇所で組み立て方がずれるとWeb側の表示と詳細パネルが
+/// 食い違いかねないため、必ずここだけを通す。
+pub fn evidence_details_for(prov: &ProvenanceStore, id: AssertionId) -> anyhow::Result<Vec<EvidenceDetail>> {
+    prov.evidence_for(id)?
+        .into_iter()
+        .map(|e| {
+            let source = prov.try_get_source_record(e.source_record_id)?;
+            Ok(EvidenceDetail {
+                evidence_kind: e.evidence_kind.as_str().to_string(),
+                locator: e.locator,
+                extractor_or_model: e.extractor_or_model,
+                metric_name: e.metric_name,
+                metric_value: e.metric_value,
+                source_provider: source.as_ref().map(|s| s.provider.clone()).unwrap_or_default(),
+                source_provider_id: source.as_ref().map(|s| s.provider_id.clone()).unwrap_or_default(),
+            })
+        })
+        .collect()
+}
+
+/// 1件のassertionのReviewDecision行をすべて`ReviewDecisionDetail`へ組み立てる。
+/// `evidence_details_for`と同じ理由で共有する。
+pub fn review_decision_details_for(prov: &ProvenanceStore, id: AssertionId) -> anyhow::Result<Vec<ReviewDecisionDetail>> {
+    Ok(prov
+        .review_decisions_for(id)?
+        .into_iter()
+        .map(|r| ReviewDecisionDetail {
+            decision: r.decision.as_str().to_string(),
+            reviewer_id: r.reviewer_id,
+            scope: r.scope,
+            rationale: r.rationale,
+            decided_at_unix: r.decided_at_unix,
+        })
+        .collect())
 }
 
 /// `assertion_ids`ぶんの詳細を、id(文字列化、JSON object keyのため)→詳細の
@@ -70,33 +113,8 @@ pub fn export_assertion_details(
     for raw_id in assertion_ids {
         let id = AssertionId(raw_id);
         let Some(assertion) = prov.try_get_assertion(id)? else { continue };
-        let evidence = prov
-            .evidence_for(id)?
-            .into_iter()
-            .map(|e| {
-                let source = prov.try_get_source_record(e.source_record_id)?;
-                Ok(EvidenceDetail {
-                    evidence_kind: e.evidence_kind.as_str().to_string(),
-                    locator: e.locator,
-                    extractor_or_model: e.extractor_or_model,
-                    metric_name: e.metric_name,
-                    metric_value: e.metric_value,
-                    source_provider: source.as_ref().map(|s| s.provider.clone()).unwrap_or_default(),
-                    source_provider_id: source.as_ref().map(|s| s.provider_id.clone()).unwrap_or_default(),
-                })
-            })
-            .collect::<anyhow::Result<Vec<_>>>()?;
-        let review_decisions = prov
-            .review_decisions_for(id)?
-            .into_iter()
-            .map(|r| ReviewDecisionDetail {
-                decision: r.decision.as_str().to_string(),
-                reviewer_id: r.reviewer_id,
-                scope: r.scope,
-                rationale: r.rationale,
-                decided_at_unix: r.decided_at_unix,
-            })
-            .collect();
+        let evidence = evidence_details_for(prov, id)?;
+        let review_decisions = review_decision_details_for(prov, id)?;
         out.insert(
             raw_id.to_string(),
             AssertionDetail {

@@ -35,14 +35,13 @@ export interface LineageGraph {
   dependsOn: Map<number, number[]>;
   /** 判断id → その判断を参照している判断のid */
   usedBy: Map<number, number[]>;
-  /** 判断id → その判断に接続する射 */
-  morphismsOf: Map<number, ExportedMorphism[]>;
   /**
-   * 射id → 証拠層（`mathesis-provenance`）のRelationAssertion id。
-   * `judgments.provenance.json`が無い/フェッチに失敗した場合は空のまま
-   * （画面の見た目は変わらず、単にこの追跡情報が出ないだけ）。
+   * 判断id → その判断に接続する射。P2（`docs/P2_STATUS.md`）以降、`id`は
+   * 証拠層（`mathesis-provenance`）のRelationAssertion idそのもの——
+   * 以前は別に`morphismProvenance`という2つ目のidマップを持っていたが、
+   * `morphisms.json`自体が証拠層から生成されるようになったので不要になった。
    */
-  morphismProvenance?: Map<number, { assertionId: number; releaseTag: string }>;
+  morphismsOf: Map<number, ExportedMorphism[]>;
 }
 
 export type LineageRelation =

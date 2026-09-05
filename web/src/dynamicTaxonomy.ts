@@ -19,14 +19,13 @@ import type {
   ExportedCluster,
   ExportedField,
   PapersExport,
+  ProvenanceRelationEdge,
   RelatedEdge,
   RelatedEdgesExport,
-  RelationsExport,
-  RelationsProvenanceExport,
   SearchIndexColumns,
   TaxonomyShell,
 } from "./types";
-import { escapeHtml, formatGeneratedAt, reportProvenanceIssue } from "./util";
+import { escapeHtml, formatGeneratedAt } from "./util";
 
 type Tab = "fields" | "novel";
 type View = { tab: Tab; field: ExportedField | null; openCluster: number | null; query: string };
@@ -94,18 +93,14 @@ export class DynamicTaxonomyExplorer {
    */
   private aliases: Record<string, string[]> = {};
   /**
-   * 型付き関係（`taxonomy.relations.json`、0.58MB）。フレーズ→そのフレーズ
-   * が関わる関係の一覧（向きは`TypedRelationView.relation`参照）。
-   * 根拠文つきのConfirmed/Groundedしか含まれない（Rust側export.rs参照）。
+   * 型付き関係（`relations.json`、P2 `docs/P2_STATUS.md`——
+   * `mathesis-provenance web-export`が証拠層から直接生成）。フレーズ→
+   * そのフレーズが関わる関係の一覧（向きは`TypedRelationView.relation`
+   * 参照）。根拠文つきのConfirmed/Groundedしか含まれない。各行は生成元の
+   * `assertionId`を最初から持っているので、以前の`relationProvenance`
+   * サイドカー・突き合わせは不要になった。
    */
   private relations: Record<string, TypedRelationView[]> = {};
-  /**
-   * Phase 1 (`mathesis-provenance`)の追跡情報。`"subject|object|kind"`
-   * （元のsubject/object順、`concept_relation_legacy_ref`と同じ形）で引く
-   * ——`TypedRelationView`自体は表示用に向きを畳んであるので、
-   * `lookupRelationProvenance`で両方の向きを試す。
-   */
-  private relationProvenance = new Map<string, { assertionId: number; releaseTag: string }>();
 
   constructor(root: HTMLElement) {
     this.root = root;
@@ -245,36 +240,10 @@ export class DynamicTaxonomyExplorer {
         console.error("Failed to load taxonomy.aliases.json:", err);
       }
       try {
-        const resp = await fetch(`${import.meta.env.BASE_URL}taxonomy.relations.json`);
-        if (resp.ok) this.relations = expandRelations((await resp.json()) as RelationsExport);
+        const resp = await fetch(`${import.meta.env.BASE_URL}relations.json`);
+        if (resp.ok) this.relations = expandRelations((await resp.json()) as ProvenanceRelationEdge[]);
       } catch (err) {
-        console.error("Failed to load taxonomy.relations.json:", err);
-      }
-      // Phase 1 (`mathesis-provenance`)の追跡サイドカー。無くても/失敗しても
-      // 既存の画面は今までどおり動く（レガシー互換モード）——404（旧
-      // リリースにサイドカーが無い）以外の失敗は`reportProvenanceIssue`で
-      // 報告する（外部レビュー2026-09-05提案3）。2つのサイドカー間の
-      // リリース一致は`mathesis-provenance verify`側の仕事——ビルド/デプロイ
-      // 時に検査済みの前提でここでは重複させない。
-      try {
-        const resp = await fetch(`${import.meta.env.BASE_URL}taxonomy.relations.provenance.json`);
-        if (resp.ok) {
-          const prov = (await resp.json()) as RelationsProvenanceExport;
-          if (!Array.isArray(prov.relations) || typeof prov.releaseTag !== "string") {
-            reportProvenanceIssue("taxonomy.relations.provenance.json has an unexpected shape (missing relations[] or releaseTag)");
-          } else {
-            for (const r of prov.relations) {
-              this.relationProvenance.set(`${r.subject}|${r.object}|${r.kind}`, {
-                assertionId: r.assertionId,
-                releaseTag: prov.releaseTag,
-              });
-            }
-          }
-        } else if (resp.status !== 404) {
-          reportProvenanceIssue(`taxonomy.relations.provenance.json returned HTTP ${resp.status}`);
-        }
-      } catch (err) {
-        reportProvenanceIssue(`taxonomy.relations.provenance.json failed to load: ${err}`);
+        console.error("Failed to load relations.json:", err);
       }
       if (this.view.query.trim().length > 0) this.render();
     })();
@@ -561,7 +530,7 @@ export class DynamicTaxonomyExplorer {
 
     const relations = this.relations[h.phrase];
     if (relations !== undefined && relations.length > 0) {
-      row.appendChild(this.renderTypedRelations(h.phrase, relations));
+      row.appendChild(this.renderTypedRelations(relations));
     }
 
     const papers = this.conceptPapers[h.phrase];
@@ -587,32 +556,7 @@ export class DynamicTaxonomyExplorer {
    * 事実として主張できる水準ではないため、読者が引用元の一文を読んで
    * その場で判断できることを、正しさの根拠そのものにしている。
    */
-  /**
-   * `TypedRelationView`は表示用に向きを畳んである（`expandRelations`参照:
-   * 同じ元の行が subject 側からは"broader"、object側からは"narrower"として
-   * 見える）。元の`(subject, object, kind)`——`legacy_ref`の組み立てに要る
-   * 形——を`phrase`（今見ている概念）と`r.relation`から復元して引く。
-   * `equivalent_to`はどちら向きにも同じ形で入るため両方試す。
-   */
-  private lookupRelationProvenance(phrase: string, r: TypedRelationView): { assertionId: number; releaseTag: string } | undefined {
-    if (this.relationProvenance.size === 0) return undefined;
-    const candidates: [string, string, string][] =
-      r.relation === "equivalent"
-        ? [
-            [phrase, r.other, "equivalent_to"],
-            [r.other, phrase, "equivalent_to"],
-          ]
-        : r.relation === "broader"
-          ? [[phrase, r.other, "specialization_of"]]
-          : [[r.other, phrase, "specialization_of"]];
-    for (const [subject, object, kind] of candidates) {
-      const hit = this.relationProvenance.get(`${subject}|${object}|${kind}`);
-      if (hit) return hit;
-    }
-    return undefined;
-  }
-
-  private renderTypedRelations(phrase: string, relations: TypedRelationView[]): HTMLElement {
+  private renderTypedRelations(relations: TypedRelationView[]): HTMLElement {
     const box = document.createElement("div");
     box.className = "dt-search-hit-relations";
 
@@ -651,21 +595,19 @@ export class DynamicTaxonomyExplorer {
       evidence.append(`"${r.evidenceSentence}" — `, link);
       item.appendChild(evidence);
 
-      // Phase 1 (`mathesis-provenance`)追跡情報。無ければ何も足さない——
-      // 既存の見た目・挙動は変わらない。クリックで`provenancePanel.ts`の
-      // 詳細ダイアログを開く（外部レビュー2026-09-05提案4）。
-      const provenance = this.lookupRelationProvenance(phrase, r);
-      if (provenance) {
-        const provBtn = document.createElement("button");
-        provBtn.type = "button";
-        provBtn.className = "dt-relation-provenance";
-        provBtn.textContent = `Provenance: assertion #${provenance.assertionId} (release ${provenance.releaseTag})`;
-        provBtn.onclick = (ev) => {
-          ev.stopPropagation();
-          void showAssertionDetail(provenance.assertionId);
-        };
-        item.appendChild(provBtn);
-      }
+      // `r.assertionId`は`relations.json`自体が証拠層から生成される
+      // ようになった（P2、`docs/P2_STATUS.md`）ため常に存在する——クリックで
+      // `provenancePanel.ts`の詳細ダイアログを開く（外部レビュー
+      // 2026-09-05提案4）。
+      const provBtn = document.createElement("button");
+      provBtn.type = "button";
+      provBtn.className = "dt-relation-provenance";
+      provBtn.textContent = `Provenance: assertion #${r.assertionId}`;
+      provBtn.onclick = (ev) => {
+        ev.stopPropagation();
+        void showAssertionDetail(r.assertionId);
+      };
+      item.appendChild(provBtn);
 
       list.appendChild(item);
     }
@@ -926,8 +868,14 @@ function expandAliases(columns: AliasExport): Record<string, string[]> {
   return map;
 }
 
-/** 1件の型付き関係を、片方の概念から見た形に向き付けたもの。 */
+/**
+ * 1件の型付き関係を、片方の概念から見た形に向き付けたもの。`assertionId`は
+ * `ProvenanceRelationEdge`からそのまま引き継ぐ——`relations.json`自体が
+ * 証拠層から生成されるようになった（P2、`docs/P2_STATUS.md`）ので、以前の
+ * ような向き復元による突き合わせなしに、この1件だけで出典まで辿れる。
+ */
 export interface TypedRelationView {
+  assertionId: number;
   other: string;
   /**
    * "narrower" = otherはこの概念**より特殊**（この概念はotherを一般化）。
@@ -936,35 +884,29 @@ export interface TypedRelationView {
    */
   relation: "narrower" | "broader" | "equivalent";
   status: "confirmed" | "grounded";
-  confidence: number;
+  confidence: number | null;
   evidenceSentence: string;
   evidenceArxivId: string;
 }
 
 /**
- * 列形式（subject[i]がobject[i]のkind[i]）を、フレーズ引きの双方向
- * リストへ展開する。specialization_ofは両端から見え方が違う——
- * subject側からは「objectの方が広い」、object側からは「subjectの方が
- * 狭い」。
+ * 行形式の`relations.json`を、フレーズ引きの双方向リストへ展開する。
+ * specialization_ofは両端から見え方が違う——subject側からは「objectの方が
+ * 広い」、object側からは「subjectの方が狭い」。
  */
-function expandRelations(columns: RelationsExport): Record<string, TypedRelationView[]> {
+function expandRelations(edges: ProvenanceRelationEdge[]): Record<string, TypedRelationView[]> {
   const map: Record<string, TypedRelationView[]> = {};
   const push = (phrase: string, view: TypedRelationView) => {
     (map[phrase] ??= []).push(view);
   };
-  for (let i = 0; i < columns.subject.length; i++) {
-    const subject = columns.subject[i];
-    const object = columns.object[i];
-    const status = columns.status[i];
-    const confidence = columns.confidence[i];
-    const evidenceSentence = columns.evidenceSentence[i];
-    const evidenceArxivId = columns.evidenceArxivId[i];
-    if (columns.kind[i] === "equivalent_to") {
-      push(subject, { other: object, relation: "equivalent", status, confidence, evidenceSentence, evidenceArxivId });
-      push(object, { other: subject, relation: "equivalent", status, confidence, evidenceSentence, evidenceArxivId });
+  for (const e of edges) {
+    const { subject, object, status, confidence, evidenceSentence, evidenceArxivId, assertionId } = e;
+    if (e.kind === "equivalent_to") {
+      push(subject, { assertionId, other: object, relation: "equivalent", status, confidence, evidenceSentence, evidenceArxivId });
+      push(object, { assertionId, other: subject, relation: "equivalent", status, confidence, evidenceSentence, evidenceArxivId });
     } else {
-      push(subject, { other: object, relation: "broader", status, confidence, evidenceSentence, evidenceArxivId });
-      push(object, { other: subject, relation: "narrower", status, confidence, evidenceSentence, evidenceArxivId });
+      push(subject, { assertionId, other: object, relation: "broader", status, confidence, evidenceSentence, evidenceArxivId });
+      push(object, { assertionId, other: subject, relation: "narrower", status, confidence, evidenceSentence, evidenceArxivId });
     }
   }
   return map;

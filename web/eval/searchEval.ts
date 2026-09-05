@@ -220,7 +220,8 @@ function evaluateRelations(
 }
 
 /**
- * 型付き関係（`taxonomy.relations.json`、`relations.rs`）の自動チェック。
+ * 型付き関係（`relations.json`、P2以降`mathesis-provenance web-export`が
+ * 証拠層から直接生成——`docs/P2_STATUS.md`）の自動チェック。
  *
  * この出力は手動サンプル84件で精度を実測した（約36%、`relations.rs`
  * 冒頭コメント）——正誤の判定は人間にしかできない領域なので、ここで
@@ -232,44 +233,39 @@ function evaluateRelations(
  * 数字で確認する。
  */
 function evaluateTypedRelations(): void {
-  const path = resolve(webRoot, "public", "taxonomy.relations.json");
+  const path = resolve(webRoot, "public", "relations.json");
   let raw: unknown;
   try {
     raw = JSON.parse(readFileSync(path, "utf8"));
   } catch {
-    console.log("\n型付き関係: taxonomy.relations.json が無い（`relations`未実行）ためスキップ");
+    console.log("\n型付き関係: relations.json が無い（`mathesis-provenance web-export`未実行）ためスキップ");
     return;
   }
-  const rel = raw as {
-    subject: string[];
-    object: string[];
-    kind: string[];
-    status: string[];
-  };
+  const rel = raw as { subject: string; object: string; kind: string; status: string }[];
 
   const specializationPairs = new Set<string>();
   let cycles = 0;
   const cycleExamples: string[] = [];
-  for (let i = 0; i < rel.subject.length; i++) {
-    if (rel.kind[i] !== "specialization_of") continue;
-    const forward = `${rel.subject[i]} ${rel.object[i]}`;
-    const backward = `${rel.object[i]} ${rel.subject[i]}`;
+  for (const r of rel) {
+    if (r.kind !== "specialization_of") continue;
+    const forward = `${r.subject} ${r.object}`;
+    const backward = `${r.object} ${r.subject}`;
     if (specializationPairs.has(backward)) {
       cycles++;
-      if (cycleExamples.length < 10) cycleExamples.push(`  ${rel.subject[i]} ⊂⊃ ${rel.object[i]}`);
+      if (cycleExamples.length < 10) cycleExamples.push(`  ${r.subject} ⊂⊃ ${r.object}`);
     }
     specializationPairs.add(forward);
   }
 
   const byStatus: Record<string, number> = {};
   const byKind: Record<string, number> = {};
-  for (let i = 0; i < rel.subject.length; i++) {
-    byStatus[rel.status[i]] = (byStatus[rel.status[i]] ?? 0) + 1;
-    byKind[rel.kind[i]] = (byKind[rel.kind[i]] ?? 0) + 1;
+  for (const r of rel) {
+    byStatus[r.status] = (byStatus[r.status] ?? 0) + 1;
+    byKind[r.kind] = (byKind[r.kind] ?? 0) + 1;
   }
 
   console.log("\n型付き関係の一貫性チェック");
-  console.log(`  総数 ${rel.subject.length}（confirmed ${byStatus.confirmed ?? 0} / grounded ${byStatus.grounded ?? 0}）`);
+  console.log(`  総数 ${rel.length}（confirmed ${byStatus.confirmed ?? 0} / grounded ${byStatus.grounded ?? 0}）`);
   console.log(`  内訳 specialization_of ${byKind.specialization_of ?? 0} / equivalent_to ${byKind.equivalent_to ?? 0}`);
   console.log(`  矛盾する循環（A⊂BかつB⊂A） ${cycles}件`);
   report("矛盾する循環の例", cycleExamples);

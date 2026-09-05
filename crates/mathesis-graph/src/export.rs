@@ -11,7 +11,6 @@
 //! 経由が現状唯一の橋渡し。
 
 use crate::model::JudgmentRecord;
-use crate::morphism::MorphismRecord;
 use crate::paper::PaperId;
 use crate::store::{GraphStore, Result};
 use serde::Serialize;
@@ -31,13 +30,6 @@ pub struct ExportedJudgment {
     pub paper_arxiv_id: Option<String>,
 }
 
-#[derive(Serialize, Debug, PartialEq, Eq)]
-#[serde(rename_all = "camelCase")]
-pub struct ExportedDependency {
-    pub from: i64,
-    pub to: i64,
-}
-
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ExportedPaper {
@@ -51,38 +43,13 @@ pub struct ExportedPaper {
     pub cites: Vec<String>,
 }
 
-/// 層3の射（`morphisms`テーブル）。`judgment_dependencies`（証明本体が参照する
-/// 判断、Phase 9）とは別物——含意・特殊化・一般化・同値という論理的な関係を
-/// 表す。現状これは`mathesis-importer`の`--propose-morphisms`が
-/// `propose_heuristic_morphisms`（命名規則・ステートメント構造からの
-/// ヒューリスティック）で機械的に提案した`Proposed`（未承認）候補のみで、
-/// 人間によるレビュー・承認（`GraphStore::accept_morphism`）はこの実データに
-/// 対してはまだ行っていない——`status`をそのままエクスポートし、UI側で
-/// 「未承認の候補」であることを明示する。
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ExportedMorphism {
-    pub id: i64,
-    pub src: i64,
-    pub dst: i64,
-    pub kind: String,
-    pub origin: String,
-    pub status: String,
-    pub rationale: Option<String>,
-}
-
-fn to_exported_morphism(m: &MorphismRecord) -> ExportedMorphism {
-    ExportedMorphism {
-        id: m.id.0,
-        src: m.src.0,
-        dst: m.dst.0,
-        kind: m.kind.as_str().to_string(),
-        origin: m.origin.as_str().to_string(),
-        status: m.status.as_str().to_string(),
-        rationale: m.rationale.clone(),
-    }
-}
-
+// `dependencies`/`morphisms`（辺そのもの）はここには**もう無い**
+// （P2、`docs/P2_STATUS.md`）。Web版は`mathesis-provenance web-export`が
+// 証拠層から直接生成する`dependencies.json`/`morphisms.json`を読む——
+// `kind`/`origin`/`status`/`rationale`は`morphisms`テーブルの生の値ではなく
+// `RelationAssertion`+`Evidence`+`ReviewDecision`から再構成されたものになり、
+// 二重の読み方が生まれないようにするため、この構造体からは辺の配列そのものを
+// 削除した。件数（構造ノード側の統計として引き続き有用）だけはここに残す。
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GraphExport {
@@ -95,8 +62,6 @@ pub struct GraphExport {
     pub morphism_count: usize,
     pub papers: Vec<ExportedPaper>,
     pub judgments: Vec<ExportedJudgment>,
-    pub dependencies: Vec<ExportedDependency>,
-    pub morphisms: Vec<ExportedMorphism>,
 }
 
 fn context_line(name: &str, ty: &mathesis_ast::Expr) -> String {
@@ -128,7 +93,7 @@ pub fn build_export(store: &GraphStore) -> Result<GraphExport> {
     let mut paper_judgment_counts: HashMap<PaperId, usize> = HashMap::new();
 
     let mut exported_judgments = Vec::with_capacity(judgments.len());
-    let mut dependencies = Vec::new();
+    let mut dependency_count = 0usize;
 
     for j in &judgments {
         let paper_arxiv_id = match j.source_paper {
@@ -148,10 +113,7 @@ pub fn build_export(store: &GraphStore) -> Result<GraphExport> {
         };
 
         exported_judgments.push(to_exported(j, paper_arxiv_id));
-
-        for dep in store.dependencies_of(j.id)? {
-            dependencies.push(ExportedDependency { from: j.id.0, to: dep.0 });
-        }
+        dependency_count += store.dependencies_of(j.id)?.len();
     }
 
     let paper_records = store.list_papers()?;
@@ -177,8 +139,7 @@ pub fn build_export(store: &GraphStore) -> Result<GraphExport> {
         });
     }
 
-    let morphisms: Vec<ExportedMorphism> =
-        store.list_morphisms()?.iter().map(to_exported_morphism).collect();
+    let morphism_count = store.list_morphisms()?.len();
 
     Ok(GraphExport {
         generated_at_unix: std::time::SystemTime::now()
@@ -186,12 +147,10 @@ pub fn build_export(store: &GraphStore) -> Result<GraphExport> {
             .map(|d| d.as_secs())
             .unwrap_or(0),
         judgment_count: exported_judgments.len(),
-        dependency_count: dependencies.len(),
-        morphism_count: morphisms.len(),
+        dependency_count,
+        morphism_count,
         papers,
         judgments: exported_judgments,
-        dependencies,
-        morphisms,
     })
 }
 
@@ -232,8 +191,6 @@ mod tests {
 
         assert_eq!(export.judgment_count, 3);
         assert_eq!(export.dependency_count, 1);
-        assert_eq!(export.dependencies[0], ExportedDependency { from: derived.0, to: base.0 });
-
         assert_eq!(export.papers.len(), 1);
         assert_eq!(export.papers[0].arxiv_id, "2604.05984");
         assert_eq!(export.papers[0].judgment_count, 2);
@@ -261,8 +218,12 @@ mod tests {
         assert!(cited_export.cites.is_empty(), "引用される側は何も引用していない");
     }
 
+    /// 射そのもの（kind/origin/status/rationale）のexportは
+    /// `mathesis-provenance web_export`側（P2、`docs/P2_STATUS.md`）が担う
+    /// ようになったため、ここでは件数だけを確かめる——per-morphismの詳細は
+    /// `mathesis-provenance`の`web_export`/`legacy_adapter_test.rs`が検証する。
     #[test]
-    fn build_export_includes_morphisms_with_their_status_and_rationale() {
+    fn build_export_counts_morphisms_without_exporting_them() {
         use crate::morphism::MorphismKind;
 
         let store = GraphStore::open_in_memory().unwrap();
@@ -275,13 +236,5 @@ mod tests {
         let export = build_export(&store).unwrap();
 
         assert_eq!(export.morphism_count, 1);
-        assert_eq!(export.morphisms.len(), 1);
-        let m = &export.morphisms[0];
-        assert_eq!(m.src, group_hom.0);
-        assert_eq!(m.dst, abelian_group_hom.0);
-        assert_eq!(m.kind, "specialization");
-        assert_eq!(m.origin, "manual");
-        assert_eq!(m.status, "accepted");
-        assert_eq!(m.rationale.as_deref(), Some("test rationale"));
     }
 }

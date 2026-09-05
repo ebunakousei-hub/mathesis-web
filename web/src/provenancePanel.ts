@@ -67,6 +67,15 @@ function renderReview(r: AssertionDetail["reviewDecisions"][number]): string {
     </li>`;
 }
 
+/**
+ * P3, Increment 1（`docs/P3_STATUS.md`）: カタログにラベルがあれば
+ * 「表示名 (タグ付き参照)」、無ければタグ付き参照だけを見せる——無い
+ * ラベルを捏造しない。
+ */
+function renderRef(ref: string, label: string | null): string {
+  return label ? `${escapeHtml(label)} <code>${escapeHtml(ref)}</code>` : `<code>${escapeHtml(ref)}</code>`;
+}
+
 function renderDetail(d: AssertionDetail): string {
   return `
     <form method="dialog" class="prov-dialog-form">
@@ -76,7 +85,7 @@ function renderDetail(d: AssertionDetail): string {
       </div>
       <div class="prov-dialog-body">
         <div class="prov-row"><span class="prov-label">relation</span>
-          <code>${escapeHtml(d.subjectRef)}</code> —<b>${escapeHtml(d.predicate)}</b>→ <code>${escapeHtml(d.objectRef)}</code>
+          ${renderRef(d.subjectRef, d.subjectLabel)} —<b>${escapeHtml(d.predicate)}</b>→ ${renderRef(d.objectRef, d.objectLabel)}
         </div>
         <div class="prov-row"><span class="prov-label">epistemic state</span>
           <span class="prov-badge">${escapeHtml(d.epistemicState)}</span>

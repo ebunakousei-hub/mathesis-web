@@ -52,6 +52,12 @@ pub struct AssertionDetail {
     /// proposed edges are opt-in")をそのままここで判定する——
     /// `extracted`/`proposed`/`rejected`は既定では対象外。
     pub eligible_for_default_traversal: bool,
+    /// P3, Increment 1（`docs/P3_STATUS.md`）: `build-catalog`済みなら
+    /// `subject_ref`/`object_ref`の人間可読な表示名。カタログが無い/その
+    /// 参照がまだ登録されていない場合は`null`——`subjectRef`のタグ付き
+    /// 文字列自体は捏造ラベルより正直なので、無ければ黙ってそちらを見せる。
+    pub subject_label: Option<String>,
+    pub object_label: Option<String>,
 }
 
 /// ARCHITECTURE_NEXT.md §7の既定トラバース方針("observed formal dependencies
@@ -86,6 +92,16 @@ pub fn evidence_details_for(prov: &ProvenanceStore, id: AssertionId) -> anyhow::
 }
 
 /// 1件のassertionのReviewDecision行をすべて`ReviewDecisionDetail`へ組み立てる。
+/// `ref_string`（`subject_ref`/`object_ref`のタグ付き文字列）が指す
+/// エンティティの表示名を引く。カタログ未構築、またはその参照がまだ
+/// カタログに載っていなければ`None`——`try_get_entity`ではなく
+/// `resolve_entity_ref`から辿るのは、conceptの表記ゆれ（aliasのref文字列）
+/// も直接引けるようにするため。
+pub fn entity_label_for(prov: &ProvenanceStore, ref_string: &str) -> anyhow::Result<Option<String>> {
+    let Some(entity_id) = prov.resolve_entity_ref(ref_string)? else { return Ok(None) };
+    Ok(prov.try_get_entity(entity_id)?.map(|e| e.display_label))
+}
+
 /// `evidence_details_for`と同じ理由で共有する。
 pub fn review_decision_details_for(prov: &ProvenanceStore, id: AssertionId) -> anyhow::Result<Vec<ReviewDecisionDetail>> {
     Ok(prov
@@ -115,6 +131,8 @@ pub fn export_assertion_details(
         let Some(assertion) = prov.try_get_assertion(id)? else { continue };
         let evidence = evidence_details_for(prov, id)?;
         let review_decisions = review_decision_details_for(prov, id)?;
+        let subject_label = entity_label_for(prov, &assertion.subject_ref)?;
+        let object_label = entity_label_for(prov, &assertion.object_ref)?;
         out.insert(
             raw_id.to_string(),
             AssertionDetail {
@@ -128,6 +146,8 @@ pub fn export_assertion_details(
                 evidence,
                 review_decisions,
                 eligible_for_default_traversal: is_eligible_for_default_traversal(assertion.epistemic_state),
+                subject_label,
+                object_label,
             },
         );
     }

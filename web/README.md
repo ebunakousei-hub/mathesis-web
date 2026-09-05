@@ -901,7 +901,9 @@ assertion #123 (release ...)」はボタンで、クリックすると
 カタログではない）、Lean elaborator由来の`verified`状態。詳細は
 `docs/P1_STATUS.md`（Phase 1が今どこまで保証しているか）、
 `docs/P2_STATUS.md`（Web読み取りモデルを証拠層から直接生成する変更、
-2026-09-05）、`docs/DATA_DICTIONARY.md`の「Known limitations」参照。
+2026-09-05）、`docs/P3_STATUS.md`（型付きエンティティカタログの
+最初の増分——`assertions.json`の`subjectLabel`/`objectLabel`はここから
+来る）、`docs/DATA_DICTIONARY.md`の「Known limitations」参照。
 
 ## 今後の課題（意図的に今回は着手していない）
 

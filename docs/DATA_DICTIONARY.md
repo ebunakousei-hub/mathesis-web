@@ -287,13 +287,20 @@ but out of scope for "Phase 1, Increment 1: schema + legacy adapter." Recording
 them here so they aren't lost, rather than quietly building partial, guessed
 versions of them now:
 
-- **No typed entity catalog.** `subject_ref`/`object_ref` are tagged strings,
-  not foreign keys into a real `Entity` table with `entity_kind`, and there is
-  no `RelationSchema` table declaring which entity kinds each predicate
-  allows. Item 8 above is a narrow adapter-bug guard, not this catalog.
-  Building the real thing means implementing ARCHITECTURE_NEXT.md §5.2
-  (`Paper`/`Statement`/`Concept`/`ProofArtifact`), which Phase 1's own bullet
-  list does not include — it belongs with `mathesis-catalog` (§8).
+- **No typed entity catalog with `subject_ref`/`object_ref` as real foreign
+  keys — partially resolved in P3, Increment 1 (`docs/P3_STATUS.md`).**
+  `entities`/`entity_refs` (`crates/mathesis-provenance/src/entity.rs`,
+  `catalog_adapter.rs`) now give every judgment/concept/paper a stable
+  `EntityId` and a resolvable display label — real records, per
+  ARCHITECTURE_NEXT.md §5.2's minimal `Paper`/`Concept` shape, built
+  additively from `mathesis-graph`/`mathesis-taxonomy`'s existing data
+  (100% of existing assertions' references resolve against it on real
+  data). What's still missing: `subject_ref`/`object_ref` themselves are
+  still tagged strings, not `EntityId` foreign keys — the catalog is an
+  additive lookup layer today, not yet the wire format. There is still no
+  `RelationSchema` table declaring which entity kinds each predicate
+  allows (item 8 above remains a narrow adapter-bug guard, not that), and
+  no `Statement`/`ProofArtifact` distinction.
 - **Relation semantics are still coarse.** `equivalent_to` alone doesn't
   distinguish definitional equality from isomorphism from "the same object
   under different names" from bibliographic synonymy; `implies` doesn't

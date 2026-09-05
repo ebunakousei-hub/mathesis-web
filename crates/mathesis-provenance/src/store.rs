@@ -103,6 +103,28 @@ CREATE TABLE IF NOT EXISTS review_decisions (
     dataset_version    TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_review_decisions_assertion ON review_decisions(assertion_id);
+
+-- P3, Increment 1（ARCHITECTURE_NEXT.md §5.2、docs/P3_STATUS.md）。
+-- `entities`は実世界の対象（judgment/concept/paper）1件につき1行。
+-- `subject_ref`/`object_ref`が使う`"kind:id"`タグ付き文字列とは違う
+-- 独立した主キー空間で、これが将来の本物のFK移行の土台になる。
+CREATE TABLE IF NOT EXISTS entities (
+    id                INTEGER PRIMARY KEY,
+    kind              TEXT NOT NULL,
+    display_label     TEXT NOT NULL,
+    source_record_id  INTEGER REFERENCES source_records(id)
+);
+CREATE INDEX IF NOT EXISTS idx_entities_kind ON entities(kind);
+
+-- 「このタグ付き文字列は、どの実在エンティティを指すか」の解決表。
+-- concept は表記ゆれ（alias）ごとに複数行を持ちうる——
+-- "kahler manifold"と"kahler manifolds"のような別表記が同じentity_idへ
+-- 解決されるようにするため（judgment/paperは常に1entity=1行）。
+CREATE TABLE IF NOT EXISTS entity_refs (
+    ref_string  TEXT PRIMARY KEY,
+    entity_id   INTEGER NOT NULL REFERENCES entities(id)
+);
+CREATE INDEX IF NOT EXISTS idx_entity_refs_entity ON entity_refs(entity_id);
 "#;
 
 impl ProvenanceStore {

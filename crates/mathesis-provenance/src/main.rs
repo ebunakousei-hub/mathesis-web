@@ -4,6 +4,7 @@
 use anyhow::{Context, Result};
 use mathesis_graph::GraphStore;
 use mathesis_provenance::assertion_export::export_assertion_details;
+use mathesis_provenance::catalog_adapter::{build_concept_catalog, build_judgment_paper_catalog};
 use mathesis_provenance::legacy_adapter::{import_graph, import_taxonomy_relations, ADAPTER_NAME, ADAPTER_VERSION};
 use mathesis_provenance::manifest::{
     input_file_hash, ManifestCounts, ProvenanceManifest, WebExportCounts, WebExportManifest, SCHEMA_VERSION,
@@ -57,7 +58,16 @@ fn usage() -> ! {
          \x20     再生成した内容との構造的一致——「古いコミット/リリースから\n\
          \x20     生成されたexportがそのまま残っている」を検出する）を1つに\n\
          \x20     まとめた、唯一の正式なリリースゲート。どちらか一方でも\n\
-         \x20     失敗すれば非ゼロ終了する。"
+         \x20     失敗すれば非ゼロ終了する。\n\
+         \x20 build-catalog --graph-db <path> --taxonomy-db <path> --db <path>\n\
+         \x20     P3: 型付きエンティティカタログ(ARCHITECTURE_NEXT.md §5.2の\n\
+         \x20     Paper/Statement/Conceptの最小版)を、mathesis-graph/\n\
+         \x20     mathesis-taxonomyの既存データ**だけ**から冪等に作る——新しい\n\
+         \x20     判断や捏造したラベルは増やさない。conceptはmathesis-taxonomy\n\
+         \x20     自身のEntity Resolution(resolve.rs)が畳んだ表記ゆれをそのまま\n\
+         \x20     alias群として使う。subject_ref/object_refの書式はまだ変えない\n\
+         \x20     ——`stats`で「今のassertionのうち何件がカタログへ実際に\n\
+         \x20     引けるか」を見られるようにするだけ(docs/P3_STATUS.md参照)。"
     );
     std::process::exit(1);
 }
@@ -79,6 +89,7 @@ fn main() -> Result<()> {
         Some("verify") => run_verify(&args[2..]),
         Some("web-export") => run_web_export(&args[2..]),
         Some("verify-release") => run_verify_release(&args[2..]),
+        Some("build-catalog") => run_build_catalog(&args[2..]),
         _ => usage(),
     }
 }
@@ -369,5 +380,31 @@ fn run_verify_release(args: &[String]) -> Result<()> {
             web_export_failures.len()
         );
     }
+    Ok(())
+}
+
+fn run_build_catalog(args: &[String]) -> Result<()> {
+    let graph_db = PathBuf::from(require_flag(args, "--graph-db")?);
+    let taxonomy_db = PathBuf::from(require_flag(args, "--taxonomy-db")?);
+    let db = PathBuf::from(require_flag(args, "--db")?);
+
+    let graph = GraphStore::open(&graph_db).with_context(|| format!("{graph_db:?} を開けません"))?;
+    let taxonomy = TaxonomyStore::open(&taxonomy_db).with_context(|| format!("{taxonomy_db:?} を開けません"))?;
+    let prov = ProvenanceStore::open(&db).with_context(|| format!("{db:?} を開けません"))?;
+
+    let graph_stats = prov.transaction(|| build_judgment_paper_catalog(&graph, &prov))?;
+    println!(
+        "judgment/paper catalog: judgments +{} (skip {}), papers +{} (skip {})",
+        graph_stats.judgments, graph_stats.judgments_skipped_existing, graph_stats.papers, graph_stats.papers_skipped_existing
+    );
+
+    let concept_stats = prov.transaction(|| build_concept_catalog(&taxonomy, &prov))?;
+    println!(
+        "concept catalog: concepts +{} (skip {}), {} alias references mapped this run",
+        concept_stats.concepts, concept_stats.concepts_skipped_existing, concept_stats.concept_aliases
+    );
+
+    let coverage = mathesis_provenance::catalog_adapter::assertion_reference_coverage(&prov)?;
+    coverage.print();
     Ok(())
 }

@@ -10,6 +10,8 @@
 
 pub mod assertion;
 pub mod assertion_export;
+pub mod catalog_adapter;
+pub mod entity;
 pub mod error;
 pub mod evidence;
 pub mod legacy_adapter;
@@ -27,8 +29,8 @@ pub mod web_export;
 
 pub use error::{ProvenanceError, ProvenanceResult, ValidationError};
 pub use model::{
-    AssertionId, EpistemicState, Evidence, EvidenceId, EvidenceKind, NewEvidence, NewRelationAssertion,
-    NewRelease, NewReviewDecision, NewSourceRecord, RelationAssertion, RelationKind, Release, ReleaseId,
-    ReviewDecision, ReviewId, ReviewOutcome, SourceRecord, SourceRecordId,
+    AssertionId, EntityId, EntityKind, Entity, EpistemicState, Evidence, EvidenceId, EvidenceKind, NewEntity,
+    NewEvidence, NewRelationAssertion, NewRelease, NewReviewDecision, NewSourceRecord, RelationAssertion,
+    RelationKind, Release, ReleaseId, ReviewDecision, ReviewId, ReviewOutcome, SourceRecord, SourceRecordId,
 };
 pub use store::ProvenanceStore;

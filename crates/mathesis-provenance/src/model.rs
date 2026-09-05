@@ -21,6 +21,60 @@ pub struct EvidenceId(pub i64);
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub struct ReviewId(pub i64);
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+pub struct EntityId(pub i64);
+
+/// P3, Increment 1（ARCHITECTURE_NEXT.md §5.2の`Paper`/`Statement`/`Concept`の
+/// 最小版、`docs/P3_STATUS.md`）。`subject_ref`/`object_ref`が使う`"kind:id"`
+/// タグの`kind`側3種と1対1で対応する——新しい種類を増やすときはそちらの
+/// プレフィックス一覧も合わせて確認すること。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum EntityKind {
+    Judgment,
+    Concept,
+    Paper,
+}
+
+impl EntityKind {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            EntityKind::Judgment => "judgment",
+            EntityKind::Concept => "concept",
+            EntityKind::Paper => "paper",
+        }
+    }
+
+    pub fn from_str(s: &str) -> Option<Self> {
+        Some(match s {
+            "judgment" => EntityKind::Judgment,
+            "concept" => EntityKind::Concept,
+            "paper" => EntityKind::Paper,
+            _ => return None,
+        })
+    }
+}
+
+/// `docs/P3_STATUS.md`: レガシーデータが既に持っている表示名をそのまま
+/// 写すだけで、新しい判断は増やさない（`display_label`はjudgmentなら
+/// `name`、無ければ種別のみ；paperなら`title`、無ければarXiv id；
+/// conceptなら代表表記——いずれも捏造ではなく既存フィールドの転記）。
+/// `source_record_id`はこの増分では常に`None`——エンティティ自体の由来
+/// 追跡は将来の増分に残し、今回は「参照が実在するか」の解決表に絞る。
+#[derive(Debug, Clone)]
+pub struct NewEntity {
+    pub kind: EntityKind,
+    pub display_label: String,
+    pub source_record_id: Option<SourceRecordId>,
+}
+
+#[derive(Debug, Clone)]
+pub struct Entity {
+    pub id: EntityId,
+    pub kind: EntityKind,
+    pub display_label: String,
+    pub source_record_id: Option<SourceRecordId>,
+}
+
 /// `docs/DATA_DICTIONARY.md`の関係カインド。ARCHITECTURE_NEXT.md §4.2の8種に
 /// `Implies`を加えた9種（2026-09-05、ユーザーの決定でMorphismKind::Implicationを
 /// `depends_on`から分離したときに追加——`depends_on`は`judgment_dependencies`

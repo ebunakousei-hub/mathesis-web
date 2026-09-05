@@ -19,6 +19,8 @@ Lean/Coq の証明支援系や arXiv から数学的知識を構造化し、検�
 - **Phase 2: Web読み取りモデルの生成元**: [docs/P2_STATUS.md](docs/P2_STATUS.md)
   （`dependencies.json`/`morphisms.json`/`relations.json`を証拠層から
   直接生成するようになった変更、2026-09-05）
+- **Phase 3: 型付きエンティティカタログ**: [docs/P3_STATUS.md](docs/P3_STATUS.md)
+  （`subject_ref`/`object_ref`を実在のEntityへ解決する、追加的な最初の増分）
 
 このファイルはルート直下のクレート構成の見取り図。各クレートの詳細な
 設計判断は各 `src/lib.rs` 冒頭のドキュメントコメントを参照。

@@ -2,7 +2,8 @@
 //! 検証できるよう、インポート実行時の`ImportStats`とは別に、保存済みデータ
 //! そのものから数え直す。
 
-use crate::store::{ProvenanceStore, Result};
+use crate::catalog_adapter::{self, CoverageReport};
+use crate::store::ProvenanceStore;
 
 #[derive(Debug)]
 pub struct Stats {
@@ -15,9 +16,14 @@ pub struct Stats {
     /// (assertionあたりのevidence行数, その行数を持つassertionの件数)。
     pub evidence_histogram: Vec<(i64, i64)>,
     pub review_decision_count: i64,
+    /// P3, Increment 1（`docs/P3_STATUS.md`）。`build-catalog`を一度も
+    /// 実行していないDBでは両方とも0件のまま——それ自体はエラーではない。
+    pub entity_count: i64,
+    pub entity_count_by_kind: Vec<(String, i64)>,
+    pub reference_coverage: CoverageReport,
 }
 
-pub fn compute(prov: &ProvenanceStore) -> Result<Stats> {
+pub fn compute(prov: &ProvenanceStore) -> anyhow::Result<Stats> {
     Ok(Stats {
         release_count: prov.list_releases()?.len() as i64,
         source_record_count: prov.source_record_count()?,
@@ -27,6 +33,9 @@ pub fn compute(prov: &ProvenanceStore) -> Result<Stats> {
         evidence_count: prov.evidence_count()?,
         evidence_histogram: prov.evidence_count_histogram()?,
         review_decision_count: prov.review_decision_count()?,
+        entity_count: prov.entity_count()?,
+        entity_count_by_kind: prov.entity_count_by_kind()?,
+        reference_coverage: catalog_adapter::assertion_reference_coverage(prov)?,
     })
 }
 
@@ -49,5 +58,14 @@ impl Stats {
             println!("    {rows}: {count}");
         }
         println!("review_decisions: {}", self.review_decision_count);
+        println!("entities: {}", self.entity_count);
+        for (k, n) in &self.entity_count_by_kind {
+            println!("    {k}: {n}");
+        }
+        if self.entity_count > 0 {
+            self.reference_coverage.print();
+        } else {
+            println!("  (run `build-catalog` to populate the entity catalog and see reference coverage)");
+        }
     }
 }

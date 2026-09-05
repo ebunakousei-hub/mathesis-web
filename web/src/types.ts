@@ -284,6 +284,15 @@ export interface AssertionDetail {
   evidence: EvidenceDetail[];
   reviewDecisions: ReviewDecisionDetail[];
   eligibleForDefaultTraversal: boolean;
+  /**
+   * P3, Increment 1（`docs/P3_STATUS.md`、`mathesis-provenance
+   * build-catalog`が作る型付きエンティティカタログ）: `subjectRef`/
+   * `objectRef`の人間可読な表示名。カタログ未構築、またはその参照がまだ
+   * カタログに載っていなければ`null`——その場合は`subjectRef`のタグ付き
+   * 文字列をそのまま見せる（無いラベルを捏造しない）。
+   */
+  subjectLabel: string | null;
+  objectLabel: string | null;
 }
 
 /**

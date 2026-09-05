@@ -12,6 +12,7 @@ members = [
     "crates/mathesis-taxonomy",
     "crates/mathesis-fulltext",
     "crates/mathesis-server",
+    "crates/mathesis-provenance",
 ]
 
 [workspace.package]

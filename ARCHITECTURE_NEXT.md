@@ -139,10 +139,17 @@ Every visible relationship has both a **kind** and an **epistemic state**.
 
 ```text
 relation kind:     depends_on | imports | cites | specializes | equivalent_to |
-                   generalizes | related_to | uses_concept
+                   generalizes | related_to | uses_concept | implies
 
 epistemic state:   observed | extracted | proposed | reviewed | verified | rejected
 ```
+
+> `implies` was added 2026-09-05 during the Phase 1 migration
+> (`docs/DATA_DICTIONARY.md`): a semantic entailment claim (A ⟹ B) asserted
+> by a human or heuristic, distinct from `depends_on`'s mechanically
+> observable "this proof's text references that judgment." Keeping them
+> separate avoids merging two different kinds of claim under one predicate,
+> per this section's own warning below.
 
 - `observed`: directly present in an imported source, such as a citation or a
   Lean-exported dependency.

@@ -110,12 +110,23 @@ Applies uniformly to all four morphism-derived kinds above
 (`specializes`/`generalizes`/`equivalent_to`/`implies`) — origin and status
 are fields on `NewMorphism`/`MorphismRecord` independent of `kind`.
 
-| Legacy `origin` | Legacy `status` | Target epistemic state | Note |
-| --- | --- | --- | --- |
-| `Manual` | `Accepted` | `reviewed` | A human asserted and accepted this edge (`NewMorphism::manual_accepted`, morphism.rs:126). |
-| `Heuristic` | `Proposed` | `proposed` | Heuristic output, not yet reviewed (`NewMorphism::heuristic_proposed`, morphism.rs:144). |
-| *(either)* | `Rejected` | `rejected` | Explicit negative review result. |
-| `Manual` | `Proposed` | *(not currently constructed)* | No current code path produces this combination. |
+**Revised 2026-09-05 on user review**: `EdgeStatus::Accepted` does **not**
+map to `reviewed`, regardless of `origin`. `reviewed` requires "an
+accountable human decision, with an explanation and scope" (§4.2) —
+`NewMorphism`/`MorphismRecord` carry a `rationale` but no reviewer
+identity anywhere in the schema, so an `Accepted` morphism cannot supply
+the accountability `reviewed` demands. The epistemic-state mapping now
+depends on `status` alone:
+
+| Legacy `status` | Target epistemic state | Note |
+| --- | --- | --- |
+| `Accepted` | `proposed` | Downgraded from an earlier draft's `reviewed`. The legacy `Accepted` disposition is **not discarded** — it is preserved as a `ReviewDecision{decision: accept, reviewer_id: None, rationale: <the morphism's rationale>, decided_at_unix: <created_at>}` row attached to the assertion (ARCHITECTURE_NEXT.md §4.1's three-layer separation is exactly built for this: the decision event is recorded as data, but whether it promotes the assertion's epistemic state is a policy choice — the policy here is "not without a known reviewer"). Revisit if/when Phase 2+ threads real reviewer identity through `mathesis-annotate`. |
+| `Proposed` | `proposed` | Heuristic output, not yet reviewed (`NewMorphism::heuristic_proposed`, morphism.rs:144). No `ReviewDecision` row. |
+| `Rejected` | `rejected` | Explicit negative review result. No `ReviewDecision` row synthesized in this increment. |
+
+`origin` (`Manual`/`Heuristic`) still determines the accompanying
+`Evidence.evidence_kind` (`reviewer_note` vs. `model_output`) and
+`extractor_or_model` — it just no longer feeds the epistemic-state decision.
 
 ### `mathesis-taxonomy::relations::RelationKind` → relation kind
 
@@ -134,21 +145,54 @@ not-yet-materialized inverse.
 
 | Legacy variant | Target epistemic state | Evidence produced | Note |
 | --- | --- | --- | --- |
-| `Proposed` | `proposed` | none | Distributional asymmetric containment only, no evidence sentence (relations.rs:305-306). |
-| `Grounded` | `extracted` | 1 row: `evidence_kind: source_span`, `extractor_or_model: "hearst-pattern"` | Has a source span (a Hearst-pattern sentence from a real paper) but no statistical corroboration and no human review (relations.rs:307-309). |
-| `Confirmed` | `extracted` | 2 rows: the `Grounded` row above **plus** `evidence_kind: model_output`, `extractor_or_model: "distributional-containment"` | Both detectors agree. **Not** `reviewed` (no human decision) and not a higher-confidence variant of `extracted` — the corroboration lives in the second `Evidence` row, not in the epistemic state. `score` is left absent unless the distributional method's output is calibrated into a documented, comparable number. |
+**Revised 2026-09-05 on user review**: an earlier draft claimed
+`RelationEdge.confidence` is hardcoded to `1.0` for `Confirmed`. Re-reading
+`relations.rs::merge()` shows this is only true for `Grounded` (the
+`Entry::Vacant` branch, relations.rs:790-799, literally writes `confidence:
+1.0`). `Confirmed` is produced by the `Entry::Occupied` branch
+(relations.rs:779-789): it upgrades an *existing* distributional edge's
+`status` to `Confirmed` in place and never touches `confidence` — so a
+`Confirmed` edge retains the **real distributional score** (the "invCL"
+asymmetric-containment metric, named in `searchEval.ts`'s doc comment on
+`classify_pair`) from when it was first inserted as a `Proposed` candidate.
+That score is not a calibrated probability either way, so per the
+"Evidence multiplicity, not epistemic-state inflation" rule above, it never
+goes into `RelationAssertion.score` — it goes into the `model_output`
+`Evidence` row as `metric_name: "invCL"` / `metric_value: <confidence>`
+(two columns added to the `evidence` table for exactly this — see
+`store.rs`'s schema).
+
+| Legacy variant | Target epistemic state | Evidence produced | Note |
+| --- | --- | --- | --- |
+| `Proposed` | `proposed` | 1 row: `evidence_kind: model_output`, `extractor_or_model: "distributional-containment"`, `metric_name: "invCL"`, `metric_value: <confidence>`, `locator: None` | Distributional asymmetric containment only, no evidence sentence (relations.rs:305-306) — but §5.3's own rule ("the Evidence table is mandatory for every assertion other than a manually authored note") still applies: the computed distributional score itself is the evidence, just with no text span. `RelationAssertion.score` stays `None` — the invCL metric is uncalibrated, so it lives on the `Evidence` row, not the assertion. |
+| `Grounded` | `extracted` | 1 row: `evidence_kind: source_span`, `extractor_or_model: "hearst-pattern"`, `locator: <the sentence>` | Has a source span (a Hearst-pattern sentence from a real paper) but no statistical corroboration and no human review (relations.rs:307-309). `confidence` really is a hardcoded `1.0` placeholder here (relations.rs:796), so it is not carried anywhere. |
+| `Confirmed` | `extracted` | 2 rows: the `Grounded` row above **plus** `evidence_kind: model_output`, `extractor_or_model: "distributional-containment"`, `metric_name: "invCL"`, `metric_value: <the retained real distributional confidence>` | Both detectors agree. **Not** `reviewed` (no human decision) and not a higher-confidence variant of `extracted` — the corroboration lives in the second `Evidence` row, not in the epistemic state. `RelationAssertion.score` stays `None` for the same reason as `Proposed`. |
 
 ### Untyped edge tables → relation kind + epistemic state
 
+**Revised 2026-09-05 on user review**: `judgment_dependencies` does **not**
+map to `observed`. `observed` means "directly present in an imported
+source, such as a citation or a **Lean-exported** dependency" (§4.2) —
+i.e. an elaborator/compiler artifact. This project's current dependency
+detection (`mathesis-importer`/`mathesis-lean-parse`) is name-matching
+over raw Lean *text* within one import batch (judgment_dependency.rs:1-11:
+"同一の由来...の中でしか解決しない" — resolved only within the set of
+judgment names read in one import, not verified by Lean's elaborator).
+That is deterministic extraction from a source span, exactly `extracted`'s
+definition — not a formal, elaborator-verified fact. `observed` is reserved
+for a real Lean-exported dependency manifest (§9 priority 4, not yet built).
+
 | Legacy source | Target `relation kind` | Target epistemic state | Note |
 | --- | --- | --- | --- |
-| `judgment_dependencies` (`crates/mathesis-graph/src/judgment_dependency.rs`) | `depends_on` | `observed` | Directly present in the proof/definition body — a source fact, not an inference. This is `depends_on`'s only source; see the `MorphismKind` section above. |
-| `paper_citations` (`crates/mathesis-graph/src/paper_citation.rs`) | `cites` | `observed` | Directly present in the paper's reference list. |
+| `judgment_dependencies` (`crates/mathesis-graph/src/judgment_dependency.rs`) | `depends_on` | `extracted` | Name-matched from raw proof-body text, not elaborator-verified (see above). This is `depends_on`'s only source in this increment; see the `MorphismKind` section above. Evidence: 1 row, `evidence_kind: source_span`, `locator: <source file:line>`, `extractor_or_model: "mathesis-importer"`. |
+| `paper_citations` (`crates/mathesis-graph/src/paper_citation.rs`) | `cites` | `observed` | Directly present in the paper's reference list — the author's own literal `arXiv:...` text in the bibliography, not a name-matching inference (`mathesis-fulltext::citation`, paper_citation.rs:11-15). This is exactly §4.2's own example of `observed` ("a citation"), unlike `judgment_dependencies` above. |
 
 ## Resolved decisions
 
-Both below were open questions in an earlier draft of this document,
-resolved by the user on 2026-09-05 rather than decided unilaterally:
+All below were open questions or outright errors in earlier drafts of this
+document, resolved by the user rather than decided unilaterally.
+
+**2026-09-05, first pass:**
 
 1. **`Confirmed`/`Grounded` do not become `reviewed`, and corroboration is
    not collapsed into a higher `score`.** The earlier draft proposed mapping
@@ -166,10 +210,48 @@ resolved by the user on 2026-09-05 rather than decided unilaterally:
    instead of `depends_on`.** The earlier draft mapped `Implication` to
    `depends_on` on the reasoning that both describe "A leads to B." That
    conflated two different claims: `depends_on` must stay a mechanically
-   observable, always-`observed` fact read off proof-body text
-   (`judgment_dependencies`'s job); `Implication` is a semantic entailment
-   claim a human or heuristic asserts, which can hold between two theorems
-   whose proofs never reference each other. Keeping them separate preserves
-   `depends_on`'s "factual and mechanically observable" property and avoids
-   two unrelated sources silently merging under one predicate — precisely
-   the modelling error ARCHITECTURE_NEXT.md §4.1 is about.
+   observable fact read off proof-body text (`judgment_dependencies`'s job,
+   though see point 3 below — that fact turned out not to be `observed`
+   either); `Implication` is a semantic entailment claim a human or
+   heuristic asserts, which can hold between two theorems whose proofs
+   never reference each other. Keeping them separate preserves
+   `depends_on`'s "mechanically observable" property and avoids two
+   unrelated sources silently merging under one predicate — precisely the
+   modelling error ARCHITECTURE_NEXT.md §4.1 is about.
+
+**2026-09-05, second pass — caught during implementation review, before any
+of this shipped in code:**
+
+3. **`judgment_dependencies` maps to `extracted`, not `observed`.** The
+   first pass still got this one wrong: it called a mechanically observable
+   fact `observed`, but `observed` specifically means read off an
+   **elaborator-verified** source (§4.2: "a Lean-exported dependency").
+   This project's dependency detection is name-matching over raw Lean text
+   within one import batch — deterministic, but not elaborator-checked.
+   That is `extracted`'s definition exactly. `paper_citations` keeps
+   `observed`, correctly: it reads the author's own literal `arXiv:...`
+   text, matching §4.2's own example of `observed` ("a citation").
+
+4. **`EdgeStatus::Accepted` maps to `proposed`, not `reviewed`, regardless
+   of `origin`.** The first pass mapped `Manual`+`Accepted` to `reviewed`.
+   But `reviewed` requires "an accountable human decision, with an
+   explanation and scope" (§4.2), and no legacy morphism carries a reviewer
+   identity — only a `rationale`. An unattributable accept cannot be
+   "accountable." The kept resolution uses ARCHITECTURE_NEXT.md §4.1's own
+   three-layer separation as intended: the legacy `Accepted` disposition is
+   preserved as a `ReviewDecision{decision: accept, reviewer_id: None, ...}`
+   event (the record exists), but the assertion's epistemic state stays
+   `proposed` (the record alone isn't accountable enough to promote it) —
+   this is a *policy* choice about what counts as trustworthy review, not a
+   loss of information.
+
+5. **The `Confirmed` distributional score is real and belongs on `Evidence`,
+   not on the assertion.** The first pass claimed `RelationEdge.confidence`
+   is hardcoded to `1.0` for both `Grounded` and `Confirmed`. Re-reading
+   `relations.rs::merge()` shows this is only true for `Grounded`;
+   `Confirmed` retains the real distributional score from when the edge was
+   first inserted as `Proposed`. That score (the "invCL" metric) is still
+   not a calibrated probability, so per decision 1's own principle it does
+   not go into `RelationAssertion.score` — it goes into the `model_output`
+   `Evidence` row's new `metric_name`/`metric_value` columns, for `Proposed`
+   and `Confirmed` alike.

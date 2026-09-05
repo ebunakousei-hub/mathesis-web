@@ -725,6 +725,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "mathesis-provenance"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "mathesis-ast",
+ "mathesis-graph",
+ "mathesis-taxonomy",
+ "rusqlite",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "mathesis-server"
 version = "0.1.0"
 dependencies = [

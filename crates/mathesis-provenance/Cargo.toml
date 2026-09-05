@@ -1,0 +1,19 @@
+[package]
+name = "mathesis-provenance"
+version.workspace = true
+edition.workspace = true
+
+[[bin]]
+name = "mathesis-provenance"
+path = "src/main.rs"
+
+[dependencies]
+mathesis-graph = { path = "../mathesis-graph" }
+mathesis-taxonomy = { path = "../mathesis-taxonomy" }
+rusqlite = { version = "0.31", features = ["bundled"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+anyhow = "1"
+
+[dev-dependencies]
+mathesis-ast = { path = "../mathesis-ast" }

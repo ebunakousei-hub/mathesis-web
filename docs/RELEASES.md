@@ -13,8 +13,11 @@ The first commit into version control — this repository had no `.git`
 before this release. Captures the application exactly as it stood before
 the ARCHITECTURE_NEXT.md migration begins.
 
-- **Commit**: `325dba1cc10b03f16593149d4928766e87a0bd5f` (tag
+- **Commit**: `626500f8e2736719997fa8922b761e4d72d07730` (tag
   `v0-baseline-20260905`; resolve with `git rev-parse v0-baseline-20260905^{commit}`).
+  This hash changed once, after the initial commit: the first 3 commits and
+  the tag were rewritten to use a pseudonymous author identity before any
+  push, since the original local git config used a real personal email.
 - **Generated at**: 2026-09-05
 - **Toolchain**: `rustc 1.98.0` / `cargo 1.98.0`
 

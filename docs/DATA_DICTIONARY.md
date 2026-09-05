@@ -5,6 +5,11 @@
 > today's three separate, incompatible enums onto it. Phase 0 does **not**
 > rename or migrate any enum in code — that migration is Phase 1's job
 > (§8's crate table). This document is what Phase 1 migrates *toward*.
+>
+> This version extends §4.2's relation-kind list by one (`implies`) and
+> resolves two mapping ambiguities that an earlier draft of this document
+> left open or got wrong. See "Resolved decisions" at the end for the
+> rationale; both were decided by the user, not inferred.
 
 ## Why this exists
 
@@ -25,13 +30,15 @@ trust models with no shared meaning. This is the "dangerous modelling error"
 ARCHITECTURE_NEXT.md §4.1 warns about: proof dependency, semantic
 implication, and lexical similarity being stored as one generic edge type.
 
-## Target vocabulary (ARCHITECTURE_NEXT.md §4.2, verbatim)
+## Target vocabulary
 
-**Relation kind** — what is being claimed:
+**Relation kind** — what is being claimed. The first eight are
+ARCHITECTURE_NEXT.md §4.2 verbatim; `implies` is an addition (see "Resolved
+decisions"):
 
 | Kind | Meaning |
 | --- | --- |
-| `depends_on` | The subject's proof/definition structurally depends on the object. |
+| `depends_on` | The subject's proof/definition **structurally** depends on the object — a mechanically observable fact (the proof body references the object), never a semantic judgment call. |
 | `imports` | The subject imports/uses the object as a module or library dependency. |
 | `cites` | The subject cites the object as a paper reference. |
 | `specializes` | The subject is a narrower case of the object (stronger hypotheses). |
@@ -39,6 +46,7 @@ implication, and lexical similarity being stored as one generic edge type.
 | `generalizes` | The inverse of `specializes` — the subject is the broader case. |
 | `related_to` | The two are connected but the connection is not further specified (never a derivation). |
 | `uses_concept` | The subject's statement or definition invokes the object as a concept it depends on. |
+| `implies` | A **semantic** claim that the subject entails the object (A ⟹ B) — asserted by a human or a heuristic, not read off proof-body text. Distinct from `depends_on`: an implication can hold between two theorems whose proofs never cite each other. |
 
 **Epistemic state** — how much the system is willing to say it knows:
 
@@ -53,7 +61,25 @@ implication, and lexical similarity being stored as one generic edge type.
 
 Confidence is not truth (§4.2): the UI must never label something
 "confirmed" without explaining *what* was confirmed. "Two detectors agree"
-is not "mathematically verified."
+is not "mathematically verified" — see the `Grounded`/`Confirmed` mapping
+below for how this project now handles that specific case.
+
+### Evidence multiplicity, not epistemic-state inflation
+
+When two independent methods corroborate the same claim, that corroboration
+is recorded as **multiple `Evidence` rows attached to one `RelationAssertion`**
+(§5.3: `Evidence { assertion_id, source_record_id, locator, evidence_kind,
+extractor_or_model, ... }`), one row per method/detector — never by moving
+the assertion to a stronger epistemic state than the evidence actually
+supports. `epistemic_state` answers "what kind of check happened" (human?
+formal? none?); evidence count and identity answer "how much support is
+there," and both are visible to a reviewer independently.
+
+`score` on `RelationAssertion` is reserved for a **documented, calibrated,
+comparable** confidence number. If a given extractor/detector doesn't
+produce one, leave `score` absent rather than deriving a pseudo-confidence
+from evidence count — an uncalibrated number is worse than no number,
+because it invites reading it as a probability it isn't.
 
 ## Legacy → target mapping
 
@@ -61,12 +87,28 @@ is not "mathematically verified."
 
 | Legacy variant | Target `relation kind` | Note |
 | --- | --- | --- |
-| `Implication` | `depends_on` | A → B; direction is the proof term's direction (not yet embedded — Phase 3 per morphism.rs:119). |
+| `Implication` | `implies` | A ⟹ B, a semantic claim (morphism.rs:18-19). **Not** `depends_on` — see "Resolved decisions." |
 | `Specialization` | `specializes` | A ⇒ B, A is the narrower case (morphism.rs:20-22). |
 | `Generalization` | `generalizes` | Inverse of `Specialization` (morphism.rs:23). |
 | `Equivalence` | `equivalent_to` | A ↔ B, same equivalence class (morphism.rs:25). |
 
+`depends_on` has exactly one source in the current system: the untyped
+`judgment_dependencies` table (below). It should stay that way — a
+mechanically observable fact, always `observed`, never populated by a human
+or heuristic morphism.
+
+By default, only `reviewed` or `verified` `implies` edges participate in
+trusted graph traversal, matching ARCHITECTURE_NEXT.md §7's traversal
+policy ("Default: observed formal dependencies and reviewed semantic
+assertions; proposed edges are opt-in"). A `proposed` `implies` edge stays
+visible in the UI (dashed, per §7's edge-visual table) but is excluded from
+default traversal until reviewed.
+
 ### `mathesis-graph::morphism::EdgeOrigin` × `EdgeStatus` → epistemic state
+
+Applies uniformly to all four morphism-derived kinds above
+(`specializes`/`generalizes`/`equivalent_to`/`implies`) — origin and status
+are fields on `NewMorphism`/`MorphismRecord` independent of `kind`.
 
 | Legacy `origin` | Legacy `status` | Target epistemic state | Note |
 | --- | --- | --- | --- |
@@ -83,36 +125,51 @@ is not "mathematically verified."
 | `EquivalentTo` | `equivalent_to` | Alternate name/formulation of the same concept (relations.rs:297-298). |
 
 Note the taxonomy layer has no equivalent of `generalizes`, `depends_on`,
-`imports`, `cites`, `related_to`, or `uses_concept` today — `specializes` is
-only ever detected in one direction (`classify_pair`, per
+`imports`, `cites`, `related_to`, `uses_concept`, or `implies` today —
+`specializes` is only ever detected in one direction (`classify_pair`, per
 `searchEval.ts`'s consistency check), so `generalizes` would be its
 not-yet-materialized inverse.
 
 ### `mathesis-taxonomy::relations::RelationStatus` → epistemic state
 
-| Legacy variant | Target epistemic state | Note |
-| --- | --- | --- |
-| `Proposed` | `proposed` | Distributional asymmetric containment only, no evidence sentence (relations.rs:305-306). |
-| `Grounded` | `extracted` | Has a source span (a Hearst-pattern sentence from a real paper) but no statistical corroboration and no human review (relations.rs:307-309). This is the closest legacy analogue of `extracted`: deterministic extraction from a span, not yet reviewed. |
-| `Confirmed` | `reviewed` | **Not** `verified` — "two detectors agree" is an automatic corroboration, not a proof-assistant check or a human decision. Calling this `reviewed` would overstate it as much as calling it `verified` would; see open question below. |
+| Legacy variant | Target epistemic state | Evidence produced | Note |
+| --- | --- | --- | --- |
+| `Proposed` | `proposed` | none | Distributional asymmetric containment only, no evidence sentence (relations.rs:305-306). |
+| `Grounded` | `extracted` | 1 row: `evidence_kind: source_span`, `extractor_or_model: "hearst-pattern"` | Has a source span (a Hearst-pattern sentence from a real paper) but no statistical corroboration and no human review (relations.rs:307-309). |
+| `Confirmed` | `extracted` | 2 rows: the `Grounded` row above **plus** `evidence_kind: model_output`, `extractor_or_model: "distributional-containment"` | Both detectors agree. **Not** `reviewed` (no human decision) and not a higher-confidence variant of `extracted` — the corroboration lives in the second `Evidence` row, not in the epistemic state. `score` is left absent unless the distributional method's output is calibrated into a documented, comparable number. |
 
 ### Untyped edge tables → relation kind + epistemic state
 
 | Legacy source | Target `relation kind` | Target epistemic state | Note |
 | --- | --- | --- | --- |
-| `judgment_dependencies` (`crates/mathesis-graph/src/judgment_dependency.rs`) | `depends_on` | `observed` | Directly present in the proof/definition body — a source fact, not an inference. |
+| `judgment_dependencies` (`crates/mathesis-graph/src/judgment_dependency.rs`) | `depends_on` | `observed` | Directly present in the proof/definition body — a source fact, not an inference. This is `depends_on`'s only source; see the `MorphismKind` section above. |
 | `paper_citations` (`crates/mathesis-graph/src/paper_citation.rs`) | `cites` | `observed` | Directly present in the paper's reference list. |
 
-## Open question for Phase 1
+## Resolved decisions
 
-`RelationStatus::Confirmed` (two independent detectors — distributional +
-Hearst — agree) does not map cleanly onto any single target epistemic state.
-It is stronger evidence than `extracted` but it is automatic corroboration,
-not `reviewed` (no accountable human decision) and definitely not `verified`
-(no proof assistant involved). Phase 1 should decide explicitly whether to:
-(a) keep mapping it to `reviewed` with a note that "reviewed" here means
-"policy-reviewed algorithmically, not by a human," or (b) introduce a
-sub-flag on `extracted` (e.g. `extracted+corroborated`) rather than force it
-into the six-state vocabulary. This document intentionally does not decide
-that now — it is left open here because it blocks a clean 1:1 migration
-mapping and should be resolved before Phase 1 touches these enums.
+Both below were open questions in an earlier draft of this document,
+resolved by the user on 2026-09-05 rather than decided unilaterally:
+
+1. **`Confirmed`/`Grounded` do not become `reviewed`, and corroboration is
+   not collapsed into a higher `score`.** The earlier draft proposed mapping
+   `Confirmed` to `reviewed` (rejected: automatic agreement between two
+   detectors is not "an accountable human decision" per §4.2's own
+   definition — that mapping would be exactly the mislabeling §4.2 warns
+   against) or inventing a `extracted+corroborated` sub-state (rejected: it
+   grows the vocabulary the doc just finished unifying). The kept
+   resolution: both stay `extracted`; corroboration is expressed as a second
+   `Evidence` row identifying the second detector, and `score` is reserved
+   for genuinely calibrated confidence values, never a stand-in for evidence
+   count.
+
+2. **`MorphismKind::Implication` gets its own relation kind, `implies`,
+   instead of `depends_on`.** The earlier draft mapped `Implication` to
+   `depends_on` on the reasoning that both describe "A leads to B." That
+   conflated two different claims: `depends_on` must stay a mechanically
+   observable, always-`observed` fact read off proof-body text
+   (`judgment_dependencies`'s job); `Implication` is a semantic entailment
+   claim a human or heuristic asserts, which can hold between two theorems
+   whose proofs never reference each other. Keeping them separate preserves
+   `depends_on`'s "factual and mechanically observable" property and avoids
+   two unrelated sources silently merging under one predicate — precisely
+   the modelling error ARCHITECTURE_NEXT.md §4.1 is about.

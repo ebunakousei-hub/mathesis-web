@@ -9,6 +9,7 @@ import {
   type SearchHit,
 } from "./hybridSearch";
 import { t } from "./i18n";
+import { showAssertionDetail } from "./provenancePanel";
 import { splitWords } from "./queryIndex";
 import type { SearchWorkerMessage } from "./searchWorker";
 import { expandRelatedEdges, expandSearchIndex } from "./taxonomyData";
@@ -25,7 +26,7 @@ import type {
   SearchIndexColumns,
   TaxonomyShell,
 } from "./types";
-import { escapeHtml, formatGeneratedAt } from "./util";
+import { escapeHtml, formatGeneratedAt, reportProvenanceIssue } from "./util";
 
 type Tab = "fields" | "novel";
 type View = { tab: Tab; field: ExportedField | null; openCluster: number | null; query: string };
@@ -250,20 +251,30 @@ export class DynamicTaxonomyExplorer {
         console.error("Failed to load taxonomy.relations.json:", err);
       }
       // Phase 1 (`mathesis-provenance`)の追跡サイドカー。無くても/失敗しても
-      // 既存の画面は今までどおり動く——単にこのMapが空のままになるだけ。
+      // 既存の画面は今までどおり動く（レガシー互換モード）——404（旧
+      // リリースにサイドカーが無い）以外の失敗は`reportProvenanceIssue`で
+      // 報告する（外部レビュー2026-09-05提案3）。2つのサイドカー間の
+      // リリース一致は`mathesis-provenance verify`側の仕事——ビルド/デプロイ
+      // 時に検査済みの前提でここでは重複させない。
       try {
         const resp = await fetch(`${import.meta.env.BASE_URL}taxonomy.relations.provenance.json`);
         if (resp.ok) {
           const prov = (await resp.json()) as RelationsProvenanceExport;
-          for (const r of prov.relations) {
-            this.relationProvenance.set(`${r.subject}|${r.object}|${r.kind}`, {
-              assertionId: r.assertionId,
-              releaseTag: prov.releaseTag,
-            });
+          if (!Array.isArray(prov.relations) || typeof prov.releaseTag !== "string") {
+            reportProvenanceIssue("taxonomy.relations.provenance.json has an unexpected shape (missing relations[] or releaseTag)");
+          } else {
+            for (const r of prov.relations) {
+              this.relationProvenance.set(`${r.subject}|${r.object}|${r.kind}`, {
+                assertionId: r.assertionId,
+                releaseTag: prov.releaseTag,
+              });
+            }
           }
+        } else if (resp.status !== 404) {
+          reportProvenanceIssue(`taxonomy.relations.provenance.json returned HTTP ${resp.status}`);
         }
       } catch (err) {
-        console.warn("taxonomy.relations.provenance.json not available:", err);
+        reportProvenanceIssue(`taxonomy.relations.provenance.json failed to load: ${err}`);
       }
       if (this.view.query.trim().length > 0) this.render();
     })();
@@ -638,13 +649,23 @@ export class DynamicTaxonomyExplorer {
       link.textContent = r.evidenceArxivId;
       link.onclick = (ev) => ev.stopPropagation();
       evidence.append(`"${r.evidenceSentence}" — `, link);
-      // Phase 1 (`mathesis-provenance`)追跡情報。無ければ何も足さない
-      // ——既存の見た目・挙動は変わらない。
+      item.appendChild(evidence);
+
+      // Phase 1 (`mathesis-provenance`)追跡情報。無ければ何も足さない——
+      // 既存の見た目・挙動は変わらない。クリックで`provenancePanel.ts`の
+      // 詳細ダイアログを開く（外部レビュー2026-09-05提案4）。
       const provenance = this.lookupRelationProvenance(phrase, r);
       if (provenance) {
-        evidence.append(` · Provenance: assertion #${provenance.assertionId} (release ${provenance.releaseTag})`);
+        const provBtn = document.createElement("button");
+        provBtn.type = "button";
+        provBtn.className = "dt-relation-provenance";
+        provBtn.textContent = `Provenance: assertion #${provenance.assertionId} (release ${provenance.releaseTag})`;
+        provBtn.onclick = (ev) => {
+          ev.stopPropagation();
+          void showAssertionDetail(provenance.assertionId);
+        };
+        item.appendChild(provBtn);
       }
-      item.appendChild(evidence);
 
       list.appendChild(item);
     }

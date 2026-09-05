@@ -13,6 +13,9 @@ Lean/Coq の証明支援系や arXiv から数学的知識を構造化し、検�
   関係の種類・確信度の統一語彙を導入する）
 - **リリース履歴・コーパス件数**: [docs/RELEASES.md](docs/RELEASES.md)
 - **関係語彙のデータディクショナリ**: [docs/DATA_DICTIONARY.md](docs/DATA_DICTIONARY.md)
+- **Phase 1が今どこまで保証しているか**: [docs/P1_STATUS.md](docs/P1_STATUS.md)
+  （証拠層の完全性ゲート`mathesis-provenance verify`が何を検証済みで、
+  何がまだ保証されていないかを明記）
 
 このファイルはルート直下のクレート構成の見取り図。各クレートの詳細な
 設計判断は各 `src/lib.rs` 冒頭のドキュメントコメントを参照。

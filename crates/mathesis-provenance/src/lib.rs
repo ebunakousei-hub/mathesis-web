@@ -9,9 +9,11 @@
 //! 既存のexportパイプラインにも触れない（それは次の増分の仕事）。
 
 pub mod assertion;
+pub mod assertion_export;
 pub mod error;
 pub mod evidence;
 pub mod legacy_adapter;
+pub mod manifest;
 pub mod model;
 pub mod reconcile;
 pub mod release;
@@ -19,6 +21,7 @@ pub mod review;
 pub mod source_record;
 pub mod stats;
 pub mod store;
+pub mod verify;
 
 pub use error::{ProvenanceError, ProvenanceResult, ValidationError};
 pub use model::{

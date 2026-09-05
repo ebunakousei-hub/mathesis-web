@@ -84,6 +84,19 @@ impl ProvenanceStore {
             .query_row(params![id.0], Self::assertion_row)
     }
 
+    /// `get_assertion`のOption版。`verify.rs`が「サイドカーが指すassertion
+    /// idが実在するか」を、存在しない場合にエラーにせず確かめるのに使う。
+    pub fn try_get_assertion(&self, id: AssertionId) -> Result<Option<RelationAssertion>> {
+        self.conn
+            .prepare_cached(
+                "SELECT id, subject_ref, predicate, object_ref, epistemic_state, score, policy_version,
+                        created_by_run_id, supersedes_id, release_id, legacy_ref
+                 FROM relation_assertions WHERE id = ?1",
+            )?
+            .query_row(params![id.0], Self::assertion_row)
+            .optional()
+    }
+
     pub fn list_assertions(&self) -> Result<Vec<RelationAssertion>> {
         let mut stmt = self.conn.prepare_cached(
             "SELECT id, subject_ref, predicate, object_ref, epistemic_state, score, policy_version,

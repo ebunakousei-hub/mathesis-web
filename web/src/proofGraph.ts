@@ -11,7 +11,7 @@ import {
   type ProofSearchResult,
 } from "./proofSearch";
 import type { ExportedJudgment, ExportedMorphism, GraphExport, JudgmentsProvenanceExport } from "./types";
-import { escapeHtml, formatGeneratedAt, unwrapLeanSymbols } from "./util";
+import { escapeHtml, formatGeneratedAt, reportProvenanceIssue, unwrapLeanSymbols } from "./util";
 
 const SEARCH_TOP_K = 25;
 
@@ -93,17 +93,28 @@ export class ProofGraphExplorer {
       this.loadError = true;
     }
     // Phase 1 (`mathesis-provenance`)の追跡サイドカー。無くても/失敗しても
-    // 既存の画面は今までどおり動く——単にこのMapが空のままになるだけ。
+    // 既存の画面は今までどおり動く（レガシー互換モード）——単にこのMapが
+    // 空のままになるだけ。ただし404（サイドカーがそもそも無い旧リリース）
+    // と、それ以外の失敗（サーバエラー・壊れたJSON）は区別する: 後者は
+    // 「本来あるはずの追跡情報が壊れている」ことの合図なので
+    // `reportProvenanceIssue`で報告する（開発時は画面にも警告、外部レビュー
+    // 2026-09-05提案3）。
     try {
       const resp = await fetch(`${import.meta.env.BASE_URL}judgments.provenance.json`);
       if (resp.ok) {
         const prov = (await resp.json()) as JudgmentsProvenanceExport;
-        for (const m of prov.morphisms) {
-          this.morphismProvenance.set(m.morphismId, { assertionId: m.assertionId, releaseTag: prov.releaseTag });
+        if (!Array.isArray(prov.morphisms) || typeof prov.releaseTag !== "string") {
+          reportProvenanceIssue("judgments.provenance.json has an unexpected shape (missing morphisms[] or releaseTag)");
+        } else {
+          for (const m of prov.morphisms) {
+            this.morphismProvenance.set(m.morphismId, { assertionId: m.assertionId, releaseTag: prov.releaseTag });
+          }
         }
+      } else if (resp.status !== 404) {
+        reportProvenanceIssue(`judgments.provenance.json returned HTTP ${resp.status}`);
       }
     } catch (err) {
-      console.warn("judgments.provenance.json not available:", err);
+      reportProvenanceIssue(`judgments.provenance.json failed to load: ${err}`);
     }
     this.render();
   }

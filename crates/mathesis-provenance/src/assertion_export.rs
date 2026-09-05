@@ -1,0 +1,117 @@
+//! `assertions.json`: assertion単位の詳細ビュー用エクスポート
+//! （外部レビュー2026-09-05、提案4「ツールチップの1行では終わらない
+//! provenanceパネル」への対応）。
+//!
+//! `reconcile`が既にサイドカーへ書き出すassertion idの集合ぶんだけ、
+//! 述語・主語目的語・認識状態・Evidence（種別・locator・抽出元・
+//! メトリック・ソースの由来）・ReviewDecision・既定トラバース対象かを
+//! 1つのJSONへまとめる。フロントエンドはこれを1回fetchしてid引きの
+//! 辞書として使う——クリックのたびに個別リクエストを飛ばさない。
+
+use crate::model::{AssertionId, EpistemicState};
+use crate::store::ProvenanceStore;
+use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EvidenceDetail {
+    pub evidence_kind: String,
+    pub locator: Option<String>,
+    pub extractor_or_model: Option<String>,
+    pub metric_name: Option<String>,
+    pub metric_value: Option<f64>,
+    pub source_provider: String,
+    pub source_provider_id: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ReviewDecisionDetail {
+    pub decision: String,
+    pub reviewer_id: Option<String>,
+    pub scope: Option<String>,
+    pub rationale: Option<String>,
+    pub decided_at_unix: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AssertionDetail {
+    pub id: i64,
+    pub subject_ref: String,
+    pub predicate: String,
+    pub object_ref: String,
+    pub epistemic_state: String,
+    pub score: Option<f64>,
+    pub release_tag: String,
+    pub evidence: Vec<EvidenceDetail>,
+    pub review_decisions: Vec<ReviewDecisionDetail>,
+    /// ARCHITECTURE_NEXT.md §7の既定トラバース方針
+    /// ("observed formal dependencies and reviewed semantic assertions;
+    /// proposed edges are opt-in")をそのままここで判定する——
+    /// `extracted`/`proposed`/`rejected`は既定では対象外。
+    pub eligible_for_default_traversal: bool,
+}
+
+fn is_eligible_for_default_traversal(state: EpistemicState) -> bool {
+    matches!(state, EpistemicState::Observed | EpistemicState::Reviewed | EpistemicState::Verified)
+}
+
+/// `assertion_ids`ぶんの詳細を、id(文字列化、JSON object keyのため)→詳細の
+/// 辞書として組み立てる。存在しないidは黙ってスキップする
+/// （`verify`が別途「サイドカーが指すidが実在するか」を検査する担当）。
+pub fn export_assertion_details(
+    prov: &ProvenanceStore,
+    release_tag: &str,
+    assertion_ids: impl IntoIterator<Item = i64>,
+) -> anyhow::Result<BTreeMap<String, AssertionDetail>> {
+    let mut out = BTreeMap::new();
+    for raw_id in assertion_ids {
+        let id = AssertionId(raw_id);
+        let Some(assertion) = prov.try_get_assertion(id)? else { continue };
+        let evidence = prov
+            .evidence_for(id)?
+            .into_iter()
+            .map(|e| {
+                let source = prov.try_get_source_record(e.source_record_id)?;
+                Ok(EvidenceDetail {
+                    evidence_kind: e.evidence_kind.as_str().to_string(),
+                    locator: e.locator,
+                    extractor_or_model: e.extractor_or_model,
+                    metric_name: e.metric_name,
+                    metric_value: e.metric_value,
+                    source_provider: source.as_ref().map(|s| s.provider.clone()).unwrap_or_default(),
+                    source_provider_id: source.as_ref().map(|s| s.provider_id.clone()).unwrap_or_default(),
+                })
+            })
+            .collect::<anyhow::Result<Vec<_>>>()?;
+        let review_decisions = prov
+            .review_decisions_for(id)?
+            .into_iter()
+            .map(|r| ReviewDecisionDetail {
+                decision: r.decision.as_str().to_string(),
+                reviewer_id: r.reviewer_id,
+                scope: r.scope,
+                rationale: r.rationale,
+                decided_at_unix: r.decided_at_unix,
+            })
+            .collect();
+        out.insert(
+            raw_id.to_string(),
+            AssertionDetail {
+                id: raw_id,
+                subject_ref: assertion.subject_ref,
+                predicate: assertion.predicate.as_str().to_string(),
+                object_ref: assertion.object_ref,
+                epistemic_state: assertion.epistemic_state.as_str().to_string(),
+                score: assertion.score,
+                release_tag: release_tag.to_string(),
+                evidence,
+                review_decisions,
+                eligible_for_default_traversal: is_eligible_for_default_traversal(assertion.epistemic_state),
+            },
+        );
+    }
+    Ok(out)
+}

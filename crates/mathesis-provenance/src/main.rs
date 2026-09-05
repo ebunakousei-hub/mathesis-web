@@ -3,9 +3,12 @@
 
 use anyhow::{Context, Result};
 use mathesis_graph::GraphStore;
-use mathesis_provenance::legacy_adapter::{import_graph, import_taxonomy_relations};
+use mathesis_provenance::assertion_export::export_assertion_details;
+use mathesis_provenance::legacy_adapter::{import_graph, import_taxonomy_relations, ADAPTER_NAME, ADAPTER_VERSION};
+use mathesis_provenance::manifest::{input_file_hash, ManifestCounts, ProvenanceManifest, SCHEMA_VERSION};
 use mathesis_provenance::model::NewRelease;
-use mathesis_provenance::reconcile::{reconcile_graph, reconcile_taxonomy};
+use mathesis_provenance::reconcile::{reconcile_graph, reconcile_taxonomy, JudgmentsProvenanceExport, RelationsProvenanceExport};
+use mathesis_provenance::verify::{verify_release, VerifyInputs};
 use mathesis_provenance::{stats, ProvenanceStore};
 use mathesis_taxonomy::store::TaxonomyStore;
 use std::path::PathBuf;
@@ -26,8 +29,13 @@ fn usage() -> ! {
          \x20     import-legacy済みの証拠層DBに対し、web/が今表示しているすべての辺\n\
          \x20     (judgment_dependencies/paper_citations/morphisms/concept_relations)が\n\
          \x20     assertionへ引けるかを検証し、judgments.provenance.json /\n\
-         \x20     taxonomy.relations.provenance.json を書き出す。既存のexport.rsや\n\
-         \x20     web/には一切触れない——追加のサイドカーファイルのみ。"
+         \x20     taxonomy.relations.provenance.json / provenance-manifest.json を書き出す。\n\
+         \x20     既存のexport.rsやweb/には一切触れない——追加のサイドカーファイルのみ。\n\
+         \x20 verify --manifest <path> --judgments-provenance <path> --relations-provenance <path>\n\
+         \x20        --provenance-db <path> [--graph-db <path>] [--taxonomy-db <path>]\n\
+         \x20     reconcileが書き出したサイドカー+マニフェストを、証拠層DB本体および\n\
+         \x20     (指定すれば)元の入力DBと突き合わせる完全性ゲート。CI/リリースゲート\n\
+         \x20     として繰り返し実行する想定——1件でも鎖が切れていれば非ゼロ終了する。"
     );
     std::process::exit(1);
 }
@@ -46,6 +54,7 @@ fn main() -> Result<()> {
         Some("import-legacy") => run_import_legacy(&args[2..]),
         Some("stats") => run_stats(&args[2..]),
         Some("reconcile") => run_reconcile(&args[2..]),
+        Some("verify") => run_verify(&args[2..]),
         _ => usage(),
     }
 }
@@ -111,6 +120,9 @@ fn run_reconcile(args: &[String]) -> Result<()> {
     let graph = GraphStore::open(&graph_db).with_context(|| format!("{graph_db:?} を開けません"))?;
     let taxonomy = TaxonomyStore::open(&taxonomy_db).with_context(|| format!("{taxonomy_db:?} を開けません"))?;
     let prov = ProvenanceStore::open(&provenance_db).with_context(|| format!("{provenance_db:?} を開けません"))?;
+    let release = prov
+        .get_release_by_tag(&release_tag)?
+        .with_context(|| format!("release '{release_tag}' not found — run import-legacy first"))?;
 
     let (judgments_export, mut report) = reconcile_graph(&graph, &prov, &release_tag)?;
     let (relations_export, taxonomy_report) = reconcile_taxonomy(&taxonomy, &prov, &release_tag)?;
@@ -119,18 +131,104 @@ fn run_reconcile(args: &[String]) -> Result<()> {
     report.print();
 
     std::fs::create_dir_all(&out_dir)?;
-    std::fs::write(
-        out_dir.join("judgments.provenance.json"),
-        serde_json::to_string(&judgments_export)?,
-    )?;
-    std::fs::write(
-        out_dir.join("taxonomy.relations.provenance.json"),
-        serde_json::to_string(&relations_export)?,
-    )?;
-    println!("wrote {} and {}", out_dir.join("judgments.provenance.json").display(), out_dir.join("taxonomy.relations.provenance.json").display());
+    std::fs::write(out_dir.join("judgments.provenance.json"), serde_json::to_string(&judgments_export)?)?;
+    std::fs::write(out_dir.join("taxonomy.relations.provenance.json"), serde_json::to_string(&relations_export)?)?;
+
+    // 外部レビュー(2026-09-05)提案4: ツールチップの1行で終わらせず、
+    // assertion単位の全詳細(Evidence・ReviewDecision・既定トラバース対象か)
+    // を1つの辞書にまとめて出す——フロントエンドのprovenanceパネルが
+    // クリックのたびに個別リクエストを飛ばさずに済むようにする。
+    let all_assertion_ids = judgments_export
+        .dependencies
+        .iter()
+        .map(|d| d.assertion_id)
+        .chain(judgments_export.citations.iter().map(|c| c.assertion_id))
+        .chain(judgments_export.morphisms.iter().map(|m| m.assertion_id))
+        .chain(relations_export.relations.iter().map(|r| r.assertion_id));
+    let assertions = export_assertion_details(&prov, &release_tag, all_assertion_ids)?;
+    std::fs::write(out_dir.join("assertions.json"), serde_json::to_string(&assertions)?)?;
+
+    // 外部レビュー(2026-09-05)提案2: 機械可読マニフェスト。サイドカーが
+    // 「どの入力・どのアダプタ版で作られたか」を自己申告することで、
+    // 静的JSON/DBが後で入れ替わっても`verify`がズレを検出できるようにする。
+    let manifest = ProvenanceManifest {
+        release_tag: release_tag.clone(),
+        release_id: release.id.0,
+        release_git_commit: release.git_commit.clone(),
+        source_database_schema: SCHEMA_VERSION,
+        adapter_name: ADAPTER_NAME.to_string(),
+        adapter_version: ADAPTER_VERSION.to_string(),
+        input_files: vec![input_file_hash(&graph_db)?, input_file_hash(&taxonomy_db)?],
+        generated_at_unix: SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs() as i64).unwrap_or(0),
+        counts: ManifestCounts {
+            dependencies: judgments_export.dependencies.len(),
+            citations: judgments_export.citations.len(),
+            morphisms: judgments_export.morphisms.len(),
+            relations: relations_export.relations.len(),
+        },
+    };
+    std::fs::write(out_dir.join("provenance-manifest.json"), serde_json::to_string_pretty(&manifest)?)?;
+
+    println!(
+        "wrote {}, {}, {}, and {}",
+        out_dir.join("judgments.provenance.json").display(),
+        out_dir.join("taxonomy.relations.provenance.json").display(),
+        out_dir.join("assertions.json").display(),
+        out_dir.join("provenance-manifest.json").display(),
+    );
 
     if !report.is_fully_traced() {
         anyhow::bail!("reconciliation incomplete — see counts above");
+    }
+    Ok(())
+}
+
+fn run_verify(args: &[String]) -> Result<()> {
+    let manifest_path = PathBuf::from(require_flag(args, "--manifest")?);
+    let judgments_path = PathBuf::from(require_flag(args, "--judgments-provenance")?);
+    let relations_path = PathBuf::from(require_flag(args, "--relations-provenance")?);
+    let provenance_db = PathBuf::from(require_flag(args, "--provenance-db")?);
+    let graph_db = flag_value(args, "--graph-db").map(PathBuf::from);
+    let taxonomy_db = flag_value(args, "--taxonomy-db").map(PathBuf::from);
+
+    let manifest: ProvenanceManifest = serde_json::from_slice(
+        &std::fs::read(&manifest_path).with_context(|| format!("{manifest_path:?} を開けません"))?,
+    )
+    .with_context(|| format!("{manifest_path:?} のパースに失敗"))?;
+    let judgments_provenance: JudgmentsProvenanceExport = serde_json::from_slice(
+        &std::fs::read(&judgments_path).with_context(|| format!("{judgments_path:?} を開けません"))?,
+    )
+    .with_context(|| format!("{judgments_path:?} のパースに失敗"))?;
+    let relations_provenance: RelationsProvenanceExport = serde_json::from_slice(
+        &std::fs::read(&relations_path).with_context(|| format!("{relations_path:?} を開けません"))?,
+    )
+    .with_context(|| format!("{relations_path:?} のパースに失敗"))?;
+    let prov = ProvenanceStore::open(&provenance_db).with_context(|| format!("{provenance_db:?} を開けません"))?;
+
+    let mut live_input_files = Vec::new();
+    if let Some(p) = &graph_db {
+        live_input_files.push(input_file_hash(p)?);
+    }
+    if let Some(p) = &taxonomy_db {
+        live_input_files.push(input_file_hash(p)?);
+    }
+    if live_input_files.is_empty() {
+        println!("note: --graph-db/--taxonomy-db not given, skipping input-file hash re-verification");
+    }
+
+    let report = verify_release(
+        &prov,
+        &VerifyInputs {
+            manifest: &manifest,
+            judgments_provenance: &judgments_provenance,
+            relations_provenance: &relations_provenance,
+            live_input_files: &live_input_files,
+        },
+    )?;
+    report.print();
+
+    if !report.is_ok() {
+        anyhow::bail!("release verification failed — {} check(s) failed", report.failures.len());
     }
     Ok(())
 }

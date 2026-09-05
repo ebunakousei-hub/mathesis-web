@@ -1,0 +1,25 @@
+{
+  "releaseTag": "v0-baseline-20260905",
+  "releaseId": 1,
+  "releaseGitCommit": "626500f8e2736719997fa8922b761e4d72d07730",
+  "sourceDatabaseSchema": 1,
+  "adapterName": "mathesis-provenance-legacy-adapter",
+  "adapterVersion": "0.1.0",
+  "inputFiles": [
+    {
+      "path": "scratch/judgments.db",
+      "sha256": "a23a538d7e4fbf7b062efe04e2dd4f1360d6fe07b850d1a421ccc908a781abb8"
+    },
+    {
+      "path": "scratch/papers_100k_fc.db",
+      "sha256": "f6e11dd310ff21b65de87cba2adc3edf6fb5cf56c4732a69b139904d63a0a6ac"
+    }
+  ],
+  "generatedAtUnix": 1788596618,
+  "counts": {
+    "dependencies": 5634,
+    "citations": 0,
+    "morphisms": 2284,
+    "relations": 1051
+  }
+}

@@ -22,7 +22,7 @@ use crate::store::ProvenanceStore;
 use mathesis_graph::GraphStore;
 use mathesis_taxonomy::relations::RelationStatus as TaxRelationStatus;
 use mathesis_taxonomy::store::TaxonomyStore;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Debug, Default)]
 pub struct ReconcileReport {
@@ -59,54 +59,54 @@ impl ReconcileReport {
     }
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(rename_all = "camelCase")]
-struct DependencyProvenance {
-    from: i64,
-    to: i64,
-    assertion_id: i64,
+pub struct DependencyProvenance {
+    pub from: i64,
+    pub to: i64,
+    pub assertion_id: i64,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(rename_all = "camelCase")]
-struct CitationProvenance {
-    from: String,
-    to: String,
-    assertion_id: i64,
+pub struct CitationProvenance {
+    pub from: String,
+    pub to: String,
+    pub assertion_id: i64,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(rename_all = "camelCase")]
-struct MorphismProvenance {
-    morphism_id: i64,
-    assertion_id: i64,
+pub struct MorphismProvenance {
+    pub morphism_id: i64,
+    pub assertion_id: i64,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(rename_all = "camelCase")]
-struct RelationProvenance {
-    subject: String,
-    object: String,
-    kind: String,
-    assertion_id: i64,
+pub struct RelationProvenance {
+    pub subject: String,
+    pub object: String,
+    pub kind: String,
+    pub assertion_id: i64,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct JudgmentsProvenanceExport {
     pub release_tag: String,
     pub release_git_commit: Option<String>,
-    dependencies: Vec<DependencyProvenance>,
-    citations: Vec<CitationProvenance>,
-    morphisms: Vec<MorphismProvenance>,
+    pub dependencies: Vec<DependencyProvenance>,
+    pub citations: Vec<CitationProvenance>,
+    pub morphisms: Vec<MorphismProvenance>,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct RelationsProvenanceExport {
     pub release_tag: String,
     pub release_git_commit: Option<String>,
-    relations: Vec<RelationProvenance>,
+    pub relations: Vec<RelationProvenance>,
 }
 
 /// `mathesis-graph`側（judgment_dependencies/paper_citations/morphisms）を

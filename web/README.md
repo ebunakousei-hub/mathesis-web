@@ -828,28 +828,53 @@ ARCHITECTURE_NEXT.md（証拠ベースの再設計）のPhase 1で、`judgments.
 依存関係・射と`taxonomy.relations.json`の型付き関係それぞれに、証拠層
 （`crates/mathesis-provenance`が持つ`RelationAssertion`/`Evidence`/
 `SourceRecord`/`Release`）への追跡情報を足した。既存の2ファイルの形は
-一切変えていない——`mathesis-provenance reconcile`が別途
-`judgments.provenance.json`/`taxonomy.relations.provenance.json`という
-薄いサイドカーを書き出し、フロントエンドがこれを追加でfetchして、既存の
-射チップのツールチップ（`lineageView.ts`）と型付き関係の根拠段落
-（`dynamicTaxonomy.ts`）に「Provenance: assertion #123 (release
-v0-baseline-20260905)」という1行を追記するだけ。サイドカーが無い/
-フェッチに失敗しても、画面は今までどおり動く。
+一切変えていない——`mathesis-provenance reconcile`が別途4つのサイドカー
+（`judgments.provenance.json`/`taxonomy.relations.provenance.json`/
+`assertions.json`/`provenance-manifest.json`）を書き出し、フロントエンド
+がこれを追加でfetchするだけ。サイドカーが無い/フェッチに失敗しても、
+画面は今までどおり動く（後述の「レガシー互換モード」）。
 
-`mathesis-provenance reconcile`は書き出す前に、`judgments.json`/
-`taxonomy.relations.json`が今表示している辺**全件**が証拠層の
-`RelationAssertion`へ実際に引けるかを検証する（2026-09-05時点の
-v0-baseline: 依存関係5,634/5,634・射2,284/2,284・型付き関係1,051/1,051、
-全件一致）。1件でも引けなければ非ゼロ終了する——「表示されている辺は
-必ず由来を示せる」という主張を、生成のたびに機械的に検証する仕組み。
+**Provenanceボタンとassertion詳細パネル**（外部レビューの2回目、
+2026-09-05）: 射チップと型付き関係の根拠段落にある「Provenance:
+assertion #123 (release ...)」はボタンで、クリックすると
+`provenancePanel.ts`がネイティブ`<dialog>`を開き、`assertions.json`
+（8,969件のassertion全件の詳細を1回だけ取得してキャッシュする辞書）
+から関係の種類・主語目的語・認識状態・Evidence各行（種別・根拠文の引用
+・抽出元・メトリック・ソースの由来）・レビュー決定・既定のトラバース
+対象かどうかを表示する。新しいモーダル基盤は増やしていない——このコード
+ベースが元々ツールチップをnative `title`属性で済ませてきたのと同じ最小
+主義で、ネイティブ`<dialog>`をそのまま使う。
 
-**まだやっていないこと**: 証拠・SourceRecordそのものの閲覧UI（今は
-ツールチップの1行だけ）、レビューワークフロー（`ReviewDecision`は
+**完全性ゲート**（同、2026-09-05）: `mathesis-provenance reconcile`は
+書き出す前に、`judgments.json`/`taxonomy.relations.json`が今表示して
+いる辺**全件**が証拠層の`RelationAssertion`へ実際に引けるかを検証する
+（2026-09-05時点のv0-baseline: 依存関係5,634/5,634・射2,284/2,284・
+型付き関係1,051/1,051、全件一致）。1件でも引けなければ非ゼロ終了する。
+さらに`mathesis-provenance verify`は、`provenance-manifest.json`
+（採用したアダプタ版・入力DBのSHA-256・件数を記録した機械可読な出所
+情報）とサイドカー・証拠層DB本体を突き合わせ、assertion欠落・Evidence
+無し・SourceRecord参照切れ・release不整合・サイドカー内の重複キーの
+曖昧解決・入力ファイルの改変（ハッシュ不一致）を検出する——1回きりの
+確認ではなく、リリースのたびに回すゲートとして作った
+（`crates/mathesis-provenance/tests/verify_test.rs`に異常系のテストが
+一通り揃っている）。
+
+**レガシー互換モード / 開発時の可視化**: サイドカーが404（存在しない）
+なら黙って今までどおり表示する——これは意図的な後方互換動作。一方で
+404以外の失敗（形が壊れている、サーバエラー、パース失敗）は
+`util.ts::reportProvenanceIssue`で報告する: 本番ビルドでは
+`console.error`だけに留め閲覧者の画面は静かなまま、開発時
+（`import.meta.env.DEV`）だけ画面右下に警告バナーを出す。「サイドカーが
+無ければ動く」という互換性を、「壊れたリリースを黙って正常扱いにする」
+にしないための区別。
+
+**まだやっていないこと**: レビューワークフロー（`ReviewDecision`は
 レガシーの`Accepted`を保存する器としてのみ機能し、実際のレビュー画面は
 無い）、型付きエンティティカタログ（`subject_ref`/`object_ref`は
 `"kind:id"`形式のタグ付き文字列で、ARCHITECTURE_NEXT.md §5.2の正式な
-カタログではない）。詳細は`docs/DATA_DICTIONARY.md`の「Known
-limitations」参照。
+カタログではない）、Lean elaborator由来の`verified`状態。詳細は
+`docs/P1_STATUS.md`（Phase 1が今どこまで保証しているか）と
+`docs/DATA_DICTIONARY.md`の「Known limitations」参照。
 
 ## 今後の課題（意図的に今回は着手していない）
 

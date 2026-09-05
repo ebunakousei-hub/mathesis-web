@@ -62,6 +62,18 @@ impl ProvenanceStore {
             .query_row(params![id.0], Self::source_record_row)
     }
 
+    /// `get_source_record`のOption版（`verify.rs`用、`try_get_assertion`と同じ理由）。
+    pub fn try_get_source_record(&self, id: SourceRecordId) -> Result<Option<SourceRecord>> {
+        self.conn
+            .prepare_cached(
+                "SELECT id, provider, provider_id, provider_revision, retrieved_at_unix, content_hash,
+                        licence, attribution, raw_payload_uri, adapter_name, adapter_version, parser_version
+                 FROM source_records WHERE id = ?1",
+            )?
+            .query_row(params![id.0], Self::source_record_row)
+            .optional()
+    }
+
     pub fn source_record_count(&self) -> Result<i64> {
         self.conn.query_row("SELECT COUNT(*) FROM source_records", [], |r| r.get(0))
     }

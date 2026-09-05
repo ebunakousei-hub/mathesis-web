@@ -79,8 +79,16 @@ its `RelationAssertion` id in the evidence core.
 | --- | --- | --- |
 | `web/public/judgments.provenance.json` | 322 KB | all 5,634 dependencies + all 2,284 morphisms (0 citations, since `paper_citations` is empty in this release) |
 | `web/public/taxonomy.relations.provenance.json` | 114 KB | all 1,051 shipped (grounded/confirmed) relations — `Proposed` relations are excluded, matching what `taxonomy.relations.json` itself ships |
+| `web/public/assertions.json` | 4.4 MB | full per-assertion detail (predicate, subject/object, epistemic state, every Evidence row's kind/locator/source, review decisions, default-traversal eligibility) for all 8,969 referenced assertions — powers the Web app's provenance detail panel |
+| `web/public/provenance-manifest.json` | <1 KB | machine-readable record of how the three files above were produced: release id/tag, adapter name+version, a SHA-256 of each input database, generation timestamp, and counts |
 
 `mathesis-provenance reconcile` verifies 100% coverage before writing these
 files (non-zero exit otherwise) — as of this release, every one of the
 5,634 + 2,284 + 1,051 = 8,969 currently-displayed edges resolves to exactly
 one `RelationAssertion`.
+
+**Release gate**: `mathesis-provenance verify` re-checks this release's
+sidecars + manifest against the live `ProvenanceStore` (and, if given the
+original input databases, against their current SHA-256) — it is meant to
+run on every release, not just once. See `docs/P1_STATUS.md` for exactly
+what this does and doesn't guarantee.

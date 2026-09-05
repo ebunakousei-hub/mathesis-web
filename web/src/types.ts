@@ -252,6 +252,42 @@ export interface RelationsProvenanceExport {
   relations: { subject: string; object: string; kind: string; assertionId: number }[];
 }
 
+/**
+ * `assertions.json`（`mathesis-provenance::assertion_export`）1件ぶんの
+ * 全詳細。id文字列をキーにした辞書として配信される
+ * （`Record<string, AssertionDetail>`）。
+ */
+export interface EvidenceDetail {
+  evidenceKind: string;
+  locator: string | null;
+  extractorOrModel: string | null;
+  metricName: string | null;
+  metricValue: number | null;
+  sourceProvider: string;
+  sourceProviderId: string;
+}
+
+export interface ReviewDecisionDetail {
+  decision: string;
+  reviewerId: string | null;
+  scope: string | null;
+  rationale: string | null;
+  decidedAtUnix: number;
+}
+
+export interface AssertionDetail {
+  id: number;
+  subjectRef: string;
+  predicate: string;
+  objectRef: string;
+  epistemicState: string;
+  score: number | null;
+  releaseTag: string;
+  evidence: EvidenceDetail[];
+  reviewDecisions: ReviewDecisionDetail[];
+  eligibleForDefaultTraversal: boolean;
+}
+
 export interface GraphExport {
   /** このJSONが書き出された時刻（UNIX秒）。TaxonomyExportと同型の対応。 */
   generatedAtUnix: number;

@@ -34,3 +34,30 @@ export function formatGeneratedAt(unixSeconds: number): string {
 export function unwrapLeanSymbols(statement: string): string {
   return statement.replace(/«Symbol\("([^"]*)"\)»/g, "$1");
 }
+
+/**
+ * Phase 1証拠層サイドカー（`judgments.provenance.json`等）の読み込みで
+ * 問題が起きたときの報告口。外部レビュー（2026-09-05）指摘への対応:
+ * 「サイドカーが無ければ黙って今までどおり表示する」という互換動作は
+ * 正しいが、それを**壊れたリリースの見落とし**にしてはいけない。
+ *
+ * 開発時（`npm run dev`、Viteの`import.meta.env.DEV`）は画面上にも
+ * 警告を出す——本番ビルドでは`console.error`だけに留め、閲覧者の画面は
+ * 今までどおり静かに動く（レガシー互換モード）。この非対称は意図的:
+ * 壊れたリリースを検出すべきなのは開発・デプロイ確認の場であって、
+ * 一般の閲覧者に警告バナーを見せることではない。
+ */
+let provenanceWarningBanner: HTMLElement | null = null;
+export function reportProvenanceIssue(message: string): void {
+  console.error(`[provenance] ${message}`);
+  if (!import.meta.env.DEV) return;
+  if (!provenanceWarningBanner) {
+    provenanceWarningBanner = document.createElement("div");
+    provenanceWarningBanner.className = "provenance-dev-warning";
+    provenanceWarningBanner.setAttribute("role", "alert");
+    document.body.appendChild(provenanceWarningBanner);
+  }
+  const line = document.createElement("div");
+  line.textContent = `⚠ provenance: ${message}`;
+  provenanceWarningBanner.appendChild(line);
+}

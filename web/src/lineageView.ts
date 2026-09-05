@@ -12,6 +12,7 @@ import {
   type LineageOptions,
   type LineageRelation,
 } from "./lineage";
+import { showAssertionDetail } from "./provenancePanel";
 import { renderStatementWithMath } from "./tex";
 import type { ExportedJudgment, ExportedMorphism } from "./types";
 import { escapeHtml, unwrapLeanSymbols } from "./util";
@@ -533,16 +534,26 @@ export class LineageView {
       // レビューを一切行っていないため、現状は全件が"proposed"）。
       const [badgeKey, hintKey] = MORPHISM_STATUS_KEYS[m.status] ?? MORPHISM_STATUS_KEYS.proposed;
       const statusBadge = `<span class="lin-chip-status lin-chip-status-${escapeHtml(m.status)}" title="${escapeHtml(t(hintKey))}">${escapeHtml(t(badgeKey))}</span>`;
-      let rationale = m.rationale ? `${t(hintKey)} — ${t("morphismRationaleLabel")}: ${m.rationale}` : t(hintKey);
-      // Phase 1 (`mathesis-provenance`)追跡情報。無ければ何も足さない
-      // ——既存の見た目・挙動は変わらない。
-      const provenance = this.graph.morphismProvenance?.get(m.id);
-      if (provenance) {
-        rationale += ` · Provenance: assertion #${provenance.assertionId} (release ${provenance.releaseTag})`;
-      }
+      const rationale = m.rationale ? `${t(hintKey)} — ${t("morphismRationaleLabel")}: ${m.rationale}` : t(hintKey);
       chip.title = rationale;
-      chip.innerHTML = `<span class="lin-chip-rel">${escapeHtml(t(RELATION_LABEL_KEY[m.kind]))}</span>${escapeHtml(other?.name ?? `#${otherId}`)}${statusBadge}`;
-      chip.onclick = () => {
+      // Phase 1 (`mathesis-provenance`)追跡情報。無ければ何も足さない——
+      // 既存の見た目・挙動は変わらない。詳細は`provenancePanel.ts`の
+      // ダイアログで見せる——チップ本体のクリック（再root）を邪魔しない
+      // よう別ボタンにする。
+      const provenance = this.graph.morphismProvenance?.get(m.id);
+      const provenanceBadge = provenance
+        ? `<span class="lin-chip-provenance" title="assertion #${provenance.assertionId} (release ${escapeHtml(provenance.releaseTag)}) — click for details" data-assertion-id="${provenance.assertionId}">ⓘ</span>`
+        : "";
+      chip.innerHTML = `<span class="lin-chip-rel">${escapeHtml(t(RELATION_LABEL_KEY[m.kind]))}</span>${escapeHtml(other?.name ?? `#${otherId}`)}${statusBadge}${provenanceBadge}`;
+      chip.onclick = (ev) => {
+        const target = ev.target as HTMLElement;
+        const provEl = target.closest<HTMLElement>(".lin-chip-provenance");
+        if (provEl) {
+          ev.stopPropagation();
+          const id = Number(provEl.dataset.assertionId);
+          void showAssertionDetail(id);
+          return;
+        }
         this.selected = otherId;
         this.render();
       };

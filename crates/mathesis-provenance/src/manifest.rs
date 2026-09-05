@@ -41,9 +41,25 @@ pub struct ProvenanceManifest {
     pub source_database_schema: u32,
     pub adapter_name: String,
     pub adapter_version: String,
+    #[serde(default)]
+    pub source_mapping_policy_version: String,
     pub input_files: Vec<InputFileHash>,
     pub generated_at_unix: i64,
     pub counts: ManifestCounts,
+    #[serde(default)]
+    pub catalog: Option<CatalogManifest>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CatalogManifest {
+    pub schema_version: u32,
+    pub build_version: String,
+    pub entity_resolution_version: String,
+    pub graph_input_sha256: String,
+    pub taxonomy_input_sha256: String,
+    pub entity_count: i64,
+    pub alias_count: i64,
 }
 
 /// `web_export.rs`が生成する3ファイルの形（`DependencyEdge`/`MorphismEdge`/

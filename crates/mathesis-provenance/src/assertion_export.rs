@@ -8,7 +8,8 @@
 //! 1つのJSONへまとめる。フロントエンドはこれを1回fetchしてid引きの
 //! 辞書として使う——クリックのたびに個別リクエストを飛ばさない。
 
-use crate::model::{AssertionId, EpistemicState};
+use crate::model::AssertionId;
+use crate::relation_policy::traversal_policy;
 use crate::store::ProvenanceStore;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -18,6 +19,7 @@ use std::collections::BTreeMap;
 pub struct EvidenceDetail {
     pub evidence_kind: String,
     pub locator: Option<String>,
+    pub locator_precision: String,
     pub extractor_or_model: Option<String>,
     pub metric_name: Option<String>,
     pub metric_value: Option<f64>,
@@ -52,20 +54,15 @@ pub struct AssertionDetail {
     /// proposed edges are opt-in")をそのままここで判定する——
     /// `extracted`/`proposed`/`rejected`は既定では対象外。
     pub eligible_for_default_traversal: bool,
+    pub traversal_policy: String,
     /// P3, Increment 1（`docs/P3_STATUS.md`）: `build-catalog`済みなら
     /// `subject_ref`/`object_ref`の人間可読な表示名。カタログが無い/その
     /// 参照がまだ登録されていない場合は`null`——`subjectRef`のタグ付き
     /// 文字列自体は捏造ラベルより正直なので、無ければ黙ってそちらを見せる。
     pub subject_label: Option<String>,
     pub object_label: Option<String>,
-}
-
-/// ARCHITECTURE_NEXT.md §7の既定トラバース方針("observed formal dependencies
-/// and reviewed semantic assertions; proposed edges are opt-in")の判定。
-/// `web_export`もこれを再利用する——「詳細パネルで見る既定トラバース対象か」と
-/// 「一覧に既定で出すか」が別の基準になってはいけない。
-pub(crate) fn is_eligible_for_default_traversal(state: EpistemicState) -> bool {
-    matches!(state, EpistemicState::Observed | EpistemicState::Reviewed | EpistemicState::Verified)
+    pub subject_label_origin: Option<String>,
+    pub object_label_origin: Option<String>,
 }
 
 /// 1件のassertionのEvidence行をすべて`EvidenceDetail`へ組み立てる。
@@ -78,9 +75,18 @@ pub fn evidence_details_for(prov: &ProvenanceStore, id: AssertionId) -> anyhow::
         .into_iter()
         .map(|e| {
             let source = prov.try_get_source_record(e.source_record_id)?;
+            let locator_precision = match e.evidence_kind {
+                crate::model::EvidenceKind::FormalExport => "formal_artifact",
+                crate::model::EvidenceKind::ModelOutput => "model_output",
+                crate::model::EvidenceKind::ReviewerNote => "reviewer_note",
+                crate::model::EvidenceKind::SourceSpan => {
+                    if e.locator.is_some() { "approximate_location" } else { "source_only" }
+                }
+            };
             Ok(EvidenceDetail {
                 evidence_kind: e.evidence_kind.as_str().to_string(),
                 locator: e.locator,
+                locator_precision: locator_precision.to_string(),
                 extractor_or_model: e.extractor_or_model,
                 metric_name: e.metric_name,
                 metric_value: e.metric_value,
@@ -100,6 +106,18 @@ pub fn evidence_details_for(prov: &ProvenanceStore, id: AssertionId) -> anyhow::
 pub fn entity_label_for(prov: &ProvenanceStore, ref_string: &str) -> anyhow::Result<Option<String>> {
     let Some(entity_id) = prov.resolve_entity_ref(ref_string)? else { return Ok(None) };
     Ok(prov.try_get_entity(entity_id)?.map(|e| e.display_label))
+}
+
+pub fn entity_label_with_origin(
+    prov: &ProvenanceStore,
+    ref_string: &str,
+) -> anyhow::Result<(Option<String>, Option<String>)> {
+    let Some(entity_id) = prov.resolve_entity_ref(ref_string)? else {
+        return Ok((None, None));
+    };
+    let entity = prov.try_get_entity(entity_id)?;
+    let origin = prov.label_origin(entity_id)?.map(|o| o.as_str().to_string());
+    Ok((entity.map(|e| e.display_label), origin))
 }
 
 /// `evidence_details_for`と同じ理由で共有する。
@@ -131,8 +149,8 @@ pub fn export_assertion_details(
         let Some(assertion) = prov.try_get_assertion(id)? else { continue };
         let evidence = evidence_details_for(prov, id)?;
         let review_decisions = review_decision_details_for(prov, id)?;
-        let subject_label = entity_label_for(prov, &assertion.subject_ref)?;
-        let object_label = entity_label_for(prov, &assertion.object_ref)?;
+        let (subject_label, subject_label_origin) = entity_label_with_origin(prov, &assertion.subject_ref)?;
+        let (object_label, object_label_origin) = entity_label_with_origin(prov, &assertion.object_ref)?;
         out.insert(
             raw_id.to_string(),
             AssertionDetail {
@@ -145,9 +163,15 @@ pub fn export_assertion_details(
                 release_tag: release_tag.to_string(),
                 evidence,
                 review_decisions,
-                eligible_for_default_traversal: is_eligible_for_default_traversal(assertion.epistemic_state),
+                eligible_for_default_traversal: matches!(
+                    traversal_policy(assertion.predicate, assertion.epistemic_state),
+                    crate::relation_policy::TraversalPolicy::DefaultTraversal
+                ),
+                traversal_policy: traversal_policy(assertion.predicate, assertion.epistemic_state).as_str().to_string(),
                 subject_label,
                 object_label,
+                subject_label_origin,
+                object_label_origin,
             },
         );
     }

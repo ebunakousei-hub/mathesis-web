@@ -4,12 +4,14 @@
 use anyhow::{Context, Result};
 use mathesis_graph::GraphStore;
 use mathesis_provenance::assertion_export::export_assertion_details;
-use mathesis_provenance::catalog_adapter::{build_concept_catalog, build_judgment_paper_catalog};
+use mathesis_provenance::catalog_adapter::{build_concept_catalog, build_judgment_paper_catalog, catalog_metadata};
 use mathesis_provenance::legacy_adapter::{import_graph, import_taxonomy_relations, ADAPTER_NAME, ADAPTER_VERSION};
+use mathesis_provenance::msc_adapter;
 use mathesis_provenance::manifest::{
-    input_file_hash, ManifestCounts, ProvenanceManifest, WebExportCounts, WebExportManifest, SCHEMA_VERSION,
+    input_file_hash, CatalogManifest, ManifestCounts, ProvenanceManifest, WebExportCounts, WebExportManifest, SCHEMA_VERSION,
     WEB_EXPORT_SCHEMA_VERSION,
 };
+use mathesis_provenance::relation_policy::SOURCE_MAPPING_POLICY_VERSION;
 use mathesis_provenance::model::NewRelease;
 use mathesis_provenance::reconcile::{reconcile_graph, reconcile_taxonomy, JudgmentsProvenanceExport, RelationsProvenanceExport};
 use mathesis_provenance::release_gate::{print_web_export_failures, verify_web_export};
@@ -90,6 +92,7 @@ fn main() -> Result<()> {
         Some("web-export") => run_web_export(&args[2..]),
         Some("verify-release") => run_verify_release(&args[2..]),
         Some("build-catalog") => run_build_catalog(&args[2..]),
+        Some("import-msc") => run_import_msc(&args[2..]),
         _ => usage(),
     }
 }
@@ -135,6 +138,22 @@ fn run_import_legacy(args: &[String]) -> Result<()> {
         taxonomy_stats.relations_imported, taxonomy_stats.relations_skipped_existing,
     );
 
+    Ok(())
+}
+
+fn run_import_msc(args: &[String]) -> Result<()> {
+    let db = PathBuf::from(require_flag(args, "--db")?);
+    let release_tag = require_flag(args, "--release")?.to_string();
+    let prov = ProvenanceStore::open(&db).with_context(|| format!("{db:?} を開けません"))?;
+    let release = prov
+        .get_release_by_tag(&release_tag)?
+        .with_context(|| format!("release '{release_tag}' not found — run import-legacy first"))?;
+    let stats = prov.transaction(|| msc_adapter::import(&prov, release.id))?;
+    println!(
+        "MSC2020: concepts +{} (skip {}), hierarchy assertions +{} (skip {})",
+        stats.concepts_imported, stats.concepts_skipped,
+        stats.relations_imported, stats.relations_skipped
+    );
     Ok(())
 }
 
@@ -193,6 +212,7 @@ fn run_reconcile(args: &[String]) -> Result<()> {
         source_database_schema: SCHEMA_VERSION,
         adapter_name: ADAPTER_NAME.to_string(),
         adapter_version: ADAPTER_VERSION.to_string(),
+        source_mapping_policy_version: SOURCE_MAPPING_POLICY_VERSION.to_string(),
         input_files: vec![input_file_hash(&graph_db)?, input_file_hash(&taxonomy_db)?],
         generated_at_unix: SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs() as i64).unwrap_or(0),
         counts: ManifestCounts {
@@ -201,6 +221,15 @@ fn run_reconcile(args: &[String]) -> Result<()> {
             morphisms: judgments_export.morphisms.len(),
             relations: relations_export.relations.len(),
         },
+        catalog: prov.catalog_metadata()?.map(|c| CatalogManifest {
+            schema_version: c.schema_version,
+            build_version: c.build_version,
+            entity_resolution_version: c.entity_resolution_version,
+            graph_input_sha256: c.graph_input_sha256,
+            taxonomy_input_sha256: c.taxonomy_input_sha256,
+            entity_count: c.entity_count,
+            alias_count: c.alias_count,
+        }),
     };
     std::fs::write(out_dir.join("provenance-manifest.json"), serde_json::to_string_pretty(&manifest)?)?;
 
@@ -402,6 +431,21 @@ fn run_build_catalog(args: &[String]) -> Result<()> {
     println!(
         "concept catalog: concepts +{} (skip {}), {} alias references mapped this run",
         concept_stats.concepts, concept_stats.concepts_skipped_existing, concept_stats.concept_aliases
+    );
+
+    let metadata = catalog_metadata(
+        &prov,
+        input_file_hash(&graph_db)?.sha256,
+        input_file_hash(&taxonomy_db)?.sha256,
+    )?;
+    prov.replace_catalog_metadata(&metadata)?;
+    println!(
+        "catalog metadata: schema {}, build {}, resolution {}, entities {}, aliases {}",
+        metadata.schema_version,
+        metadata.build_version,
+        metadata.entity_resolution_version,
+        metadata.entity_count,
+        metadata.alias_count
     );
 
     let coverage = mathesis_provenance::catalog_adapter::assertion_reference_coverage(&prov)?;

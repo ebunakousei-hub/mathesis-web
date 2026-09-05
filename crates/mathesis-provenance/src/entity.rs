@@ -6,7 +6,7 @@
 //! （conceptは複数のref文字列を持ちうるため`entities`単独では一意に
 //! 引けない）、必ず`entity_refs`経由で解決する。
 
-use crate::model::{Entity, EntityId, EntityKind, NewEntity};
+use crate::model::{Entity, EntityId, EntityKind, LabelOrigin, NewEntity};
 use crate::store::{ProvenanceStore, Result};
 use rusqlite::{params, OptionalExtension};
 
@@ -21,6 +21,27 @@ impl ProvenanceStore {
             .query_row(params![ref_string], |r| r.get::<_, i64>(0))
             .optional()
             .map(|opt| opt.map(EntityId))
+    }
+
+    pub fn resolve_entity_ref_with_kind(&self, ref_string: &str) -> Result<Option<(EntityId, EntityKind)>> {
+        self.conn
+            .prepare_cached(
+                "SELECT r.entity_id, e.kind
+                 FROM entity_refs r JOIN entities e ON e.id = r.entity_id
+                 WHERE r.ref_string = ?1",
+            )?
+            .query_row(params![ref_string], |r| {
+                let kind: String = r.get(1)?;
+                let kind = EntityKind::from_str(&kind).ok_or_else(|| {
+                    rusqlite::Error::FromSqlConversionFailure(
+                        1,
+                        rusqlite::types::Type::Text,
+                        Box::new(std::io::Error::new(std::io::ErrorKind::InvalidData, "unknown entity kind")),
+                    )
+                })?;
+                Ok((EntityId(r.get(0)?), kind))
+            })
+            .optional()
     }
 
     /// 呼び方が1つしか無いエンティティ（judgment/paper）を冪等に登録する。
@@ -65,6 +86,30 @@ impl ProvenanceStore {
         self.conn
             .prepare_cached("SELECT id, kind, display_label, source_record_id FROM entities WHERE id = ?1")?
             .query_row(params![id.0], Self::entity_row)
+    }
+
+    pub fn set_label_origin(&self, id: EntityId, origin: LabelOrigin) -> Result<()> {
+        self.conn.execute(
+            "INSERT INTO entity_labels (entity_id, origin) VALUES (?1, ?2)
+             ON CONFLICT(entity_id) DO UPDATE SET origin=excluded.origin",
+            params![id.0, origin.as_str()],
+        )?;
+        Ok(())
+    }
+
+    pub fn label_origin(&self, id: EntityId) -> Result<Option<LabelOrigin>> {
+        self.conn
+            .query_row("SELECT origin FROM entity_labels WHERE entity_id = ?1", params![id.0], |row| {
+                let value: String = row.get(0)?;
+                Ok(match value.as_str() {
+                    "source_provided" => LabelOrigin::SourceProvided,
+                    "canonicalized" => LabelOrigin::Canonicalized,
+                    "derived" => LabelOrigin::Derived,
+                    "fallback_identifier" => LabelOrigin::FallbackIdentifier,
+                    _ => return Err(rusqlite::Error::InvalidQuery),
+                })
+            })
+            .optional()
     }
 
     /// `get_entity`のOption版（`assertion_export.rs`が「ラベルが引ければ

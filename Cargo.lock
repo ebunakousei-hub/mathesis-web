@@ -731,6 +731,7 @@ dependencies = [
  "anyhow",
  "mathesis-ast",
  "mathesis-graph",
+ "mathesis-msc",
  "mathesis-taxonomy",
  "rusqlite",
  "serde",

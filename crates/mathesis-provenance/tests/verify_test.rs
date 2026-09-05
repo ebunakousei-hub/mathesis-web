@@ -5,8 +5,9 @@
 
 use mathesis_provenance::manifest::{InputFileHash, ManifestCounts, ProvenanceManifest, SCHEMA_VERSION};
 use mathesis_provenance::model::{
-    EpistemicState, EvidenceKind, NewEvidence, NewRelationAssertion, NewRelease, NewSourceRecord, RelationKind,
+    EntityKind, EpistemicState, EvidenceKind, NewEntity, NewEvidence, NewRelationAssertion, NewRelease, NewSourceRecord, RelationKind,
 };
+use mathesis_provenance::relation_policy::SOURCE_MAPPING_POLICY_VERSION;
 use mathesis_provenance::reconcile::{DependencyProvenance, JudgmentsProvenanceExport, MorphismProvenance, RelationsProvenanceExport};
 use mathesis_provenance::verify::{verify_release, VerifyInputs};
 use mathesis_provenance::ProvenanceStore;
@@ -66,9 +67,11 @@ fn base_manifest(release_id: i64) -> ProvenanceManifest {
         source_database_schema: SCHEMA_VERSION,
         adapter_name: "test".into(),
         adapter_version: "0".into(),
+        source_mapping_policy_version: String::new(),
         input_files: vec![],
         generated_at_unix: 0,
         counts: ManifestCounts { dependencies: 1, citations: 0, morphisms: 0, relations: 0 },
+        catalog: None,
     }
 }
 
@@ -326,4 +329,53 @@ fn detects_manifest_release_id_mismatch_against_db() {
 fn unknown_relation_kind_string_does_not_silently_succeed() {
     assert_eq!(RelationKind::from_str("not_a_real_kind"), None);
     assert_eq!(EpistemicState::from_str("not_a_real_state"), None);
+}
+
+#[test]
+fn rejects_catalog_with_unresolved_assertion_endpoint() {
+    let prov = ProvenanceStore::open_in_memory().unwrap();
+    let release = prov
+        .get_or_insert_release(&NewRelease { tag: "t".into(), git_commit: None, generated_at_unix: 0, notes: None })
+        .unwrap();
+    let assertion_id = seed_one_dependency_assertion(&prov, release);
+    prov.get_or_insert_entity(
+        &NewEntity { kind: EntityKind::Judgment, display_label: "known".into(), source_record_id: None },
+        "judgment:1",
+    )
+    .unwrap();
+
+    let manifest = base_manifest(release.0);
+    let report = verify_release(
+        &prov,
+        &VerifyInputs {
+            manifest: &manifest,
+            judgments_provenance: &base_judgments_sidecar(assertion_id),
+            relations_provenance: &empty_relations_sidecar(),
+            live_input_files: &[],
+        },
+    )
+    .unwrap();
+    assert!(report.failures.iter().any(|f| f.check == "unresolved_entity_reference"));
+}
+
+#[test]
+fn rejects_manifest_with_unknown_mapping_policy() {
+    let prov = ProvenanceStore::open_in_memory().unwrap();
+    let release = prov
+        .get_or_insert_release(&NewRelease { tag: "t".into(), git_commit: None, generated_at_unix: 0, notes: None })
+        .unwrap();
+    let assertion_id = seed_one_dependency_assertion(&prov, release);
+    let mut manifest = base_manifest(release.0);
+    manifest.source_mapping_policy_version = format!("{SOURCE_MAPPING_POLICY_VERSION}-future");
+    let report = verify_release(
+        &prov,
+        &VerifyInputs {
+            manifest: &manifest,
+            judgments_provenance: &base_judgments_sidecar(assertion_id),
+            relations_provenance: &empty_relations_sidecar(),
+            live_input_files: &[],
+        },
+    )
+    .unwrap();
+    assert!(report.failures.iter().any(|f| f.check == "source_mapping_policy_mismatch"));
 }

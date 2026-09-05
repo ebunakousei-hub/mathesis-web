@@ -22,6 +22,12 @@ use std::sync::LazyLock;
 
 const MSC_2020_CSV: &str = include_str!("../data/MSC_2020.csv");
 
+/// The exact official snapshot embedded in this crate. Adapters use this
+/// rather than reconstructing labels or hierarchy from another copy.
+pub fn official_csv() -> &'static str {
+    MSC_2020_CSV
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum MscLevel {
     /// "00-XX" のような2桁のトップレベル分野

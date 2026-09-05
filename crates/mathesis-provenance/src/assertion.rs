@@ -1,5 +1,6 @@
 use crate::error::{ProvenanceResult, ValidationError};
 use crate::model::{AssertionId, EpistemicState, NewRelationAssertion, RelationAssertion, RelationKind, ReleaseId};
+use crate::relation_policy::{valid_entity_kinds, SOURCE_MAPPING_POLICY_VERSION};
 use crate::store::{ProvenanceStore, Result};
 use rusqlite::{params, OptionalExtension};
 
@@ -16,14 +17,10 @@ fn ref_kind(reference: &str) -> &str {
 /// ルール未定義のため素通しする——将来の用途を先回りして禁止しない。
 fn validate_relation_kinds(predicate: RelationKind, subject_ref: &str, object_ref: &str) -> ProvenanceResult<()> {
     let (s, o) = (ref_kind(subject_ref), ref_kind(object_ref));
-    let ok = match predicate {
-        RelationKind::DependsOn => s == "judgment" && o == "judgment",
-        RelationKind::Cites => s == "paper" && o == "paper",
-        RelationKind::Implies | RelationKind::Specializes | RelationKind::Generalizes | RelationKind::EquivalentTo => {
-            (s == "judgment" && o == "judgment") || (s == "concept" && o == "concept")
-        }
-        RelationKind::Imports | RelationKind::RelatedTo | RelationKind::UsesConcept => true,
-    };
+    let ok = crate::model::EntityKind::from_str(s)
+        .zip(crate::model::EntityKind::from_str(o))
+        .map(|(s, o)| valid_entity_kinds(predicate, s, o))
+        .unwrap_or(false);
     if ok {
         Ok(())
     } else {
@@ -65,7 +62,7 @@ impl ProvenanceStore {
                 new.object_ref,
                 new.epistemic_state.as_str(),
                 new.score,
-                new.policy_version,
+                new.policy_version.as_deref().or(Some(SOURCE_MAPPING_POLICY_VERSION)),
                 new.created_by_run_id,
                 new.supersedes_id.map(|id| id.0),
                 new.release_id.0,

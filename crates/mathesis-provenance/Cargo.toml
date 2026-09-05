@@ -10,6 +10,7 @@ path = "src/main.rs"
 [dependencies]
 mathesis-graph = { path = "../mathesis-graph" }
 mathesis-taxonomy = { path = "../mathesis-taxonomy" }
+mathesis-msc = { path = "../mathesis-msc" }
 rusqlite = { version = "0.31", features = ["bundled"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

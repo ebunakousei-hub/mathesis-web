@@ -97,6 +97,62 @@ variants) actually referred to the same real-world object.
   data — `docs/DATA_DICTIONARY.md`'s "Known limitations" reasoning is
   unchanged and this increment doesn't revisit it.
 
+## Stabilization patch after Increment 1
+
+The additive catalog is now used as a validation boundary without making a
+breaking foreign-key migration:
+
+- `relation_policy.rs` defines the allowed entity-kind pairs for every
+  relation and separates traversal policy from epistemic state. A proposed
+  semantic relation is visible but not eligible for default traversal; a
+  formally verified relation may be traversable by default.
+- `verify-release` validates every assertion in the release when a catalog is
+  present. Unresolved endpoints and relation-schema violations fail the
+  release gate; an empty catalog remains a documented compatibility state for
+  pre-catalog databases.
+- Assertion detail exports now include `traversalPolicy` and explicit evidence
+  locator precision (`approximate_location`, `source_only`, `model_output`,
+  `formal_artifact`, or `reviewer_note`). A broad legacy locator is not
+  presented as an exact source span.
+- `build-catalog` records catalog metadata in the provenance database:
+  catalog schema/build version, Entity Resolution version, both input hashes,
+  and entity/alias counts. Reconciliation includes that metadata in
+  `provenance-manifest.json`, and `verify` rejects a manifest whose catalog
+  metadata differs from the live catalog.
+- Relation imports now carry the versioned source-mapping policy
+  `mathesis-source-mapping-v1`; release verification rejects a manifest made
+  with a different mapping policy.
+- Entity labels record whether they are source-provided, canonicalized,
+  derived, or fallback identifiers. Assertion details expose that origin, and
+  evidence details expose locator precision rather than implying that every
+  legacy locator is an exact span.
+- `source_adapter.rs` defines the contract future TheoremGraph/OpenAlex/MSC
+  adapters must satisfy: stable source revisions and hashes, typed assertion
+  endpoints, mapping-policy version, and complete licensing metadata. Synthetic
+  fixtures exercise the contract without importing external data.
+- `licensing.rs` validates that a source record is not treated as
+  redistributable without both a license and attribution. Existing legacy
+  records may remain incomplete and are reported as such rather than silently
+  gaining a license.
+- Adversarial release-gate tests cover catalog endpoint drift and unknown
+  source-mapping policy versions in addition to the P1/P2 corruption cases.
+- MSC2020 is now connected through `msc_adapter.rs` and the
+  `mathesis-provenance import-msc` command. It imports the official bundled
+  snapshot as 6,603 source-provided concept entities and 6,540 extracted
+  parent/child `specializes` assertions. The snapshot hash, official URL,
+  CC-BY-NC-SA-4.0 license, attribution, adapter version, and parser version
+  are stored in `SourceRecord`; reruns are idempotent.
+- TheoremGraph is deliberately not imported yet. Its public API and graph
+  schema are known, but the public documentation inspected on 2026-09-05
+  does not state a redistribution license for graph payloads. Until a license
+  or written permission is supplied, importing or publishing its snapshot
+  would violate this project's licensing contract. The adapter gate must fail
+  closed rather than treating API availability as permission.
+
+This still intentionally does not claim that a catalog resolution proves
+mathematical identity or truth. It proves only that the current release's
+references resolve deterministically under the recorded catalog.
+
 ## Where to look
 
 - `crates/mathesis-provenance/src/entity.rs` — the `entities`/

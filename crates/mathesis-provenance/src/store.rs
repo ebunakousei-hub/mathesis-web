@@ -125,6 +125,22 @@ CREATE TABLE IF NOT EXISTS entity_refs (
     entity_id   INTEGER NOT NULL REFERENCES entities(id)
 );
 CREATE INDEX IF NOT EXISTS idx_entity_refs_entity ON entity_refs(entity_id);
+
+CREATE TABLE IF NOT EXISTS entity_labels (
+    entity_id   INTEGER PRIMARY KEY REFERENCES entities(id),
+    origin      TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS catalog_metadata (
+    id                          INTEGER PRIMARY KEY CHECK (id = 1),
+    schema_version              INTEGER NOT NULL,
+    build_version               TEXT NOT NULL,
+    entity_resolution_version   TEXT NOT NULL,
+    graph_input_sha256          TEXT NOT NULL,
+    taxonomy_input_sha256       TEXT NOT NULL,
+    entity_count                INTEGER NOT NULL,
+    alias_count                 INTEGER NOT NULL
+);
 "#;
 
 impl ProvenanceStore {

@@ -16,7 +16,8 @@
 //! existing assertions' `subject_ref`/`object_ref` already resolve to a
 //! cataloged entity.
 
-use crate::model::{EntityKind, NewEntity};
+use crate::model::{EntityKind, LabelOrigin, NewEntity};
+use crate::catalog_metadata::{CATALOG_SCHEMA_VERSION, ENTITY_RESOLUTION_VERSION};
 use crate::store::ProvenanceStore;
 use mathesis_graph::GraphStore;
 use mathesis_taxonomy::resolve;
@@ -38,25 +39,49 @@ pub struct CatalogStats {
     pub concept_aliases: usize,
 }
 
+pub const CATALOG_BUILD_VERSION: &str = "mathesis-provenance::catalog-v1";
+
+pub fn catalog_metadata(
+    prov: &ProvenanceStore,
+    graph_input_sha256: String,
+    taxonomy_input_sha256: String,
+) -> anyhow::Result<crate::model::CatalogMetadata> {
+    Ok(crate::model::CatalogMetadata {
+        schema_version: CATALOG_SCHEMA_VERSION,
+        build_version: CATALOG_BUILD_VERSION.to_string(),
+        entity_resolution_version: ENTITY_RESOLUTION_VERSION.to_string(),
+        graph_input_sha256,
+        taxonomy_input_sha256,
+        entity_count: prov.entity_count()?,
+        alias_count: prov
+            .conn
+            .query_row("SELECT COUNT(*) FROM entity_refs", [], |row| row.get(0))?,
+    })
+}
+
 /// `judgment:<id>`/`paper:<arxiv_id>`エンティティを`mathesis-graph`から作る。
 /// 表示名は既存フィールドの転記のみ——`name`が無いjudgmentは種別だけの
 /// プレースホルダ（"(anonymous theorem)"等）にする。無い情報を補わない。
 pub fn build_judgment_paper_catalog(graph: &GraphStore, prov: &ProvenanceStore) -> anyhow::Result<CatalogStats> {
     let mut stats = CatalogStats::default();
     for j in graph.list_judgments()? {
+        let label_origin = if j.name.is_some() { LabelOrigin::SourceProvided } else { LabelOrigin::FallbackIdentifier };
         let label = j.name.clone().unwrap_or_else(|| format!("(anonymous {})", j.kind.as_str()));
-        let (_, was_new) = prov.get_or_insert_entity(
+        let (entity_id, was_new) = prov.get_or_insert_entity(
             &NewEntity { kind: EntityKind::Judgment, display_label: label, source_record_id: None },
             &format!("judgment:{}", j.id.0),
         )?;
+        prov.set_label_origin(entity_id, label_origin)?;
         if was_new { stats.judgments += 1 } else { stats.judgments_skipped_existing += 1 };
     }
     for p in graph.list_papers()? {
+        let label_origin = if p.title.is_some() { LabelOrigin::SourceProvided } else { LabelOrigin::FallbackIdentifier };
         let label = p.title.clone().unwrap_or_else(|| p.arxiv_id.clone());
-        let (_, was_new) = prov.get_or_insert_entity(
+        let (entity_id, was_new) = prov.get_or_insert_entity(
             &NewEntity { kind: EntityKind::Paper, display_label: label, source_record_id: None },
             &format!("paper:{}", p.arxiv_id),
         )?;
+        prov.set_label_origin(entity_id, label_origin)?;
         if was_new { stats.papers += 1 } else { stats.papers_skipped_existing += 1 };
     }
     Ok(stats)
@@ -78,10 +103,11 @@ pub fn build_concept_catalog(taxonomy: &TaxonomyStore, prov: &ProvenanceStore) -
         let mut refs = Vec::with_capacity(1 + group.aliases.len());
         refs.push(format!("concept:{}", group.representative));
         refs.extend(group.aliases.iter().map(|a| format!("concept:{a}")));
-        let (_, was_new) = prov.get_or_insert_entity_with_refs(
+        let (entity_id, was_new) = prov.get_or_insert_entity_with_refs(
             &NewEntity { kind: EntityKind::Concept, display_label: group.representative.clone(), source_record_id: None },
             &refs,
         )?;
+        prov.set_label_origin(entity_id, LabelOrigin::Canonicalized)?;
         if was_new { stats.concepts += 1 } else { stats.concepts_skipped_existing += 1 };
         stats.concept_aliases += group.aliases.len();
     }

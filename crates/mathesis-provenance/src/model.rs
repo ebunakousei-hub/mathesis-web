@@ -35,6 +35,25 @@ pub enum EntityKind {
     Paper,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum LabelOrigin {
+    SourceProvided,
+    Canonicalized,
+    Derived,
+    FallbackIdentifier,
+}
+
+impl LabelOrigin {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::SourceProvided => "source_provided",
+            Self::Canonicalized => "canonicalized",
+            Self::Derived => "derived",
+            Self::FallbackIdentifier => "fallback_identifier",
+        }
+    }
+}
+
 impl EntityKind {
     pub fn as_str(self) -> &'static str {
         match self {
@@ -73,6 +92,17 @@ pub struct Entity {
     pub kind: EntityKind,
     pub display_label: String,
     pub source_record_id: Option<SourceRecordId>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CatalogMetadata {
+    pub schema_version: u32,
+    pub build_version: String,
+    pub entity_resolution_version: String,
+    pub graph_input_sha256: String,
+    pub taxonomy_input_sha256: String,
+    pub entity_count: i64,
+    pub alias_count: i64,
 }
 
 /// `docs/DATA_DICTIONARY.md`の関係カインド。ARCHITECTURE_NEXT.md §4.2の8種に

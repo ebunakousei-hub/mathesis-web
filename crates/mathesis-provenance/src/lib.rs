@@ -11,6 +11,7 @@
 pub mod assertion;
 pub mod assertion_export;
 pub mod catalog_adapter;
+pub mod catalog_metadata;
 pub mod entity;
 pub mod error;
 pub mod evidence;
@@ -20,6 +21,10 @@ pub mod model;
 pub mod reconcile;
 pub mod release;
 pub mod release_gate;
+pub mod relation_policy;
+pub mod source_adapter;
+pub mod licensing;
+pub mod msc_adapter;
 pub mod review;
 pub mod source_record;
 pub mod stats;
@@ -29,7 +34,7 @@ pub mod web_export;
 
 pub use error::{ProvenanceError, ProvenanceResult, ValidationError};
 pub use model::{
-    AssertionId, EntityId, EntityKind, Entity, EpistemicState, Evidence, EvidenceId, EvidenceKind, NewEntity,
+    AssertionId, CatalogMetadata, EntityId, EntityKind, Entity, EpistemicState, Evidence, EvidenceId, EvidenceKind, LabelOrigin, NewEntity,
     NewEvidence, NewRelationAssertion, NewRelease, NewReviewDecision, NewSourceRecord, RelationAssertion,
     RelationKind, Release, ReleaseId, ReviewDecision, ReviewId, ReviewOutcome, SourceRecord, SourceRecordId,
 };

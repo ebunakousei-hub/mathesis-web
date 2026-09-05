@@ -14,6 +14,8 @@
 use crate::manifest::{InputFileHash, ProvenanceManifest};
 use crate::reconcile::{JudgmentsProvenanceExport, RelationsProvenanceExport};
 use crate::store::ProvenanceStore;
+use crate::relation_policy::valid_entity_kinds;
+use crate::relation_policy::SOURCE_MAPPING_POLICY_VERSION;
 use std::collections::HashMap;
 use std::path::Path;
 
@@ -103,6 +105,37 @@ fn verify_assertion_chain(
             Err(e) => report.fail("source_record_query_error", format!("{context}: {e}")),
         }
     }
+
+}
+
+fn verify_catalog_assertions(prov: &ProvenanceStore, release_id: i64, report: &mut VerifyReport) -> anyhow::Result<()> {
+    if prov.entity_count()? == 0 {
+        return Ok(());
+    }
+    for assertion in prov.list_assertions_for_release(crate::model::ReleaseId(release_id))? {
+        let context = format!("assertion #{}", assertion.id.0);
+        let subject = prov.resolve_entity_ref_with_kind(&assertion.subject_ref)?;
+        let object = prov.resolve_entity_ref_with_kind(&assertion.object_ref)?;
+        let (subject_kind, object_kind) = match (subject, object) {
+            (Some((_, subject_kind)), Some((_, object_kind))) => (subject_kind, object_kind),
+            (subject, object) => {
+                if subject.is_none() {
+                    report.fail("unresolved_entity_reference", format!("{context}: subject '{}' is not cataloged", assertion.subject_ref));
+                }
+                if object.is_none() {
+                    report.fail("unresolved_entity_reference", format!("{context}: object '{}' is not cataloged", assertion.object_ref));
+                }
+                continue;
+            }
+        };
+        if !valid_entity_kinds(assertion.predicate, subject_kind, object_kind) {
+            report.fail(
+                "relation_schema_mismatch",
+                format!("{context}: {} does not allow {:?} -> {:?}", assertion.predicate.as_str(), subject_kind, object_kind),
+            );
+        }
+    }
+    Ok(())
 }
 
 /// キーが同じなのに別々のassertion idを指すエントリが無いか確かめる
@@ -140,6 +173,18 @@ pub struct VerifyInputs<'a> {
 pub fn verify_release(prov: &ProvenanceStore, inputs: &VerifyInputs) -> anyhow::Result<VerifyReport> {
     let mut report = VerifyReport::default();
     let m = inputs.manifest;
+
+    if !m.source_mapping_policy_version.is_empty()
+        && m.source_mapping_policy_version != SOURCE_MAPPING_POLICY_VERSION
+    {
+        report.fail(
+            "source_mapping_policy_mismatch",
+            format!(
+                "manifest uses '{}', this build uses '{}'",
+                m.source_mapping_policy_version, SOURCE_MAPPING_POLICY_VERSION
+            ),
+        );
+    }
 
     // 1. release_id/tagの整合性: マニフェストの主張とDB本体が一致するか。
     match prov.get_release_by_tag(&m.release_tag)? {
@@ -211,6 +256,31 @@ pub fn verify_release(prov: &ProvenanceStore, inputs: &VerifyInputs) -> anyhow::
     }
     if m.counts.relations != rp.relations.len() {
         report.fail("counts_mismatch", format!("manifest.counts.relations={} but sidecar has {}", m.counts.relations, rp.relations.len()));
+    }
+
+    if let Some(catalog) = &m.catalog {
+        match prov.catalog_metadata()? {
+            Some(live) => {
+                if catalog.schema_version != live.schema_version
+                    || catalog.build_version != live.build_version
+                    || catalog.entity_resolution_version != live.entity_resolution_version
+                    || catalog.graph_input_sha256 != live.graph_input_sha256
+                    || catalog.taxonomy_input_sha256 != live.taxonomy_input_sha256
+                    || catalog.entity_count != live.entity_count
+                    || catalog.alias_count != live.alias_count
+                {
+                    report.fail(
+                        "catalog_metadata_mismatch",
+                        "provenance manifest catalog metadata does not match the live catalog",
+                    );
+                }
+            }
+            None => report.fail("catalog_metadata_missing", "manifest records a catalog, but the provenance DB has none"),
+        }
+    }
+
+    if let Err(e) = verify_catalog_assertions(prov, m.release_id, &mut report) {
+        report.fail("catalog_query_error", e.to_string());
     }
 
     // 5. 重複識別子キーの曖昧解決チェック。

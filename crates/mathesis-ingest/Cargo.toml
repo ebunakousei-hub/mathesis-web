@@ -1,0 +1,16 @@
+[package]
+name = "mathesis-ingest"
+version.workspace = true
+edition.workspace = true
+
+[[bin]]
+name = "mathesis-ingest"
+path = "src/main.rs"
+
+[dependencies]
+mathesis-msc = { path = "../mathesis-msc" }
+ureq = { version = "2", features = ["tls"] }
+roxmltree = "0.20"
+rusqlite = { version = "0.31", features = ["bundled"] }
+serde_json = "1"
+anyhow = "1"

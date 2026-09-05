@@ -1,0 +1,12 @@
+[package]
+name = "mathesis-annotate"
+version.workspace = true
+edition.workspace = true
+
+[[bin]]
+name = "mathesis-annotate"
+path = "src/main.rs"
+
+[dependencies]
+mathesis-graph = { path = "../mathesis-graph" }
+anyhow = "1"

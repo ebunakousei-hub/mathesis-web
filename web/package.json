@@ -1,0 +1,20 @@
+{
+  "name": "mathesis-web",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "preview": "vite preview",
+    "eval": "vite build -c vite.eval.config.ts && node eval/dist/searchEval.js"
+  },
+  "dependencies": {
+    "mathesis-wasm": "file:../crates/mathesis-wasm/pkg",
+    "temml": "^0.13.5"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.2",
+    "vite": "^5.4.8"
+  }
+}

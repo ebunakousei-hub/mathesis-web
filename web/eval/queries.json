@@ -1,0 +1,53 @@
+{
+  "note": "検索の固定評価セット。各項目の `accept` は『1位に来ていれば正解』と人手で判断した概念表記の列挙で、コーパスに実在する表記だけを書く（実在しない語を期待値にすると、直せない失敗として永久に赤くなるだけで何も測れない）。`why` はその判断の理由。変更のたびに `npm run eval` を回し、MRR@10 と dead率を比べる。`form` と `msc` はPhase 0で追加した層別化用の任意フィールドで、現行のスコアリングには使われない（docs/DATA_DICTIONARY.md、ARCHITECTURE_NEXT.md §11）。`form` はクエリの表層形（single-concept/alias/typo/natural-language/word-order/compound/casing）。`msc` は `accept` の語を `web/public/taxonomy.json` の searchIndex.mscCode に実在の表記で突き合わせて得た値で、無い場合はフィールド自体を省略する（対応するMSCが無いことを null で断言しない）。",
+  "queries": [
+    { "q": "moduli space", "accept": ["moduli space", "moduli spaces"], "why": "完全一致がある", "form": "single-concept", "msc": "14D21" },
+    { "q": "elliptic curves", "accept": ["elliptic curves", "elliptic curve"], "why": "完全一致がある", "form": "single-concept", "msc": "11G05" },
+    { "q": "riemann hypothesis", "accept": ["riemann hypothesis"], "why": "完全一致がある", "form": "single-concept" },
+    { "q": "kähler manifold", "accept": ["kähler manifold", "kähler manifolds", "kahler manifold"], "why": "ダイアクリティカル付きの完全一致", "form": "single-concept", "msc": "32J27" },
+    { "q": "kahler manifold", "accept": ["kähler manifold", "kähler manifolds", "kahler manifold"], "why": "ダイアクリティカルを打たない利用者が大半", "form": "alias", "msc": "32J27" },
+    { "q": "banach space", "accept": ["banach space", "banach spaces"], "why": "完全一致がある", "form": "single-concept", "msc": "17C65" },
+    { "q": "lie algebra", "accept": ["lie algebra", "lie algebras"], "why": "完全一致がある", "form": "single-concept", "msc": "70G65" },
+    { "q": "brownian motion", "accept": ["brownian motion", "brownian motions"], "why": "完全一致がある", "form": "single-concept", "msc": "60G22" },
+    { "q": "navier-stokes equations", "accept": ["navier-stokes equations", "navier-stokes equation", "navier stokes equations"], "why": "ハイフンを含む実在の複合語", "form": "single-concept", "msc": "35Q30" },
+    { "q": "zeta function", "accept": ["zeta function", "zeta functions", "zeta-function"], "why": "完全一致がある", "form": "single-concept", "msc": "11E45" },
+
+    { "q": "the moduli space of curves", "accept": ["moduli space", "moduli spaces", "moduli space of curves"], "why": "機能語 the / of が挟まっても中心概念に当てるべき", "form": "natural-language", "msc": "14D21" },
+    { "q": "what is a moduli space", "accept": ["moduli space", "moduli spaces"], "why": "自然文で聞かれても中心概念に当てるべき", "form": "natural-language", "msc": "14D21" },
+    { "q": "the theory of elliptic curves", "accept": ["elliptic curves", "elliptic curve"], "why": "候補全体がクエリで説明される語を優先すべき（説明率）", "form": "natural-language", "msc": "11G05" },
+    { "q": "how to compute cohomology", "accept": ["cohomology", "cohomology groups", "cohomology group"], "why": "how to は機能語", "form": "natural-language", "msc": "11E72" },
+
+    { "q": "manifold kahler", "accept": ["kähler manifold", "kähler manifolds", "kahler manifold"], "why": "語順が違うだけ", "form": "word-order", "msc": "32J27" },
+    { "q": "space banach", "accept": ["banach space", "banach spaces"], "why": "語順が違うだけ", "form": "word-order", "msc": "17C65" },
+
+    { "q": "reimann hypothesis", "accept": ["riemann hypothesis"], "why": "1文字のタイポ（riemann）", "form": "typo" },
+    { "q": "banch space", "accept": ["banach space", "banach spaces"], "why": "1文字欠けのタイポ", "form": "typo", "msc": "17C65" },
+    { "q": "eliptic curves", "accept": ["elliptic curves", "elliptic curve"], "why": "1文字欠けのタイポ", "form": "typo", "msc": "11G05" },
+    { "q": "manifod", "accept": ["manifold", "manifolds"], "why": "1文字欠けのタイポ", "form": "typo", "msc": "37D10" },
+
+    { "q": "elliptic curve", "accept": ["elliptic curves", "elliptic curve"], "why": "単数で打っても複数形の代表表記に当たるべき", "form": "alias", "msc": "11G05" },
+    { "q": "moduli spaces", "accept": ["moduli space", "moduli spaces"], "why": "複数で打っても当たるべき", "form": "alias", "msc": "14D21" },
+    { "q": "abelian variety", "accept": ["abelian varieties", "abelian variety"], "why": "単複", "form": "alias", "msc": "11G10" },
+
+    { "q": "De Giorgi-Nash-Moser theory", "accept": ["de giorgi", "moser", "de giorgi class", "nash-moser"], "why": "ハイフン連結の固有名。コーパスには de giorgi / moser が独立に存在する", "form": "single-concept" },
+    { "q": "Navier-Stokes", "accept": ["navier-stokes equations", "navier-stokes equation", "navier-stokes", "navier stokes equations"], "why": "ハイフン固有名の単独入力", "form": "single-concept", "msc": "35Q30" },
+    { "q": "p-adic", "accept": ["p-adic", "p-adic numbers", "p-adic fields", "p-adic field"], "why": "ハイフンが概念の一部", "form": "single-concept" },
+    { "q": "k-theory", "accept": ["k-theory", "algebraic k-theory"], "why": "ハイフンが概念の一部", "form": "single-concept" },
+
+    { "q": "elliptic curves cryptography", "accept": ["elliptic curves", "elliptic curve"], "why": "2概念を並べても、索引にある方に当てるべき", "form": "compound", "msc": "11G05" },
+    { "q": "random matrices and number theory", "accept": ["random matrices", "random matrix", "number theory"], "why": "接続詞で繋いだ2概念", "form": "compound", "msc": "11M50" },
+    { "q": "stability conditions on derived categories", "accept": ["stability conditions", "bridgeland stability conditions", "derived categories", "derived category"], "why": "汎用語 category 単体ではなく複合語を上に出すべき（IDF重み付け）", "form": "compound" },
+
+    { "q": "Riemann Hypothesis", "accept": ["riemann hypothesis"], "why": "大文字混じり", "form": "casing" },
+    { "q": "GALOIS GROUP", "accept": ["galois group", "galois groups"], "why": "全部大文字", "form": "casing" },
+
+    { "q": "sobolev space", "accept": ["sobolev space", "sobolev spaces"], "why": "完全一致がある", "form": "single-concept", "msc": "46E35" },
+    { "q": "weak solution", "accept": ["weak solutions", "weak solution"], "why": "完全一致がある", "form": "single-concept", "msc": "35D30" },
+    { "q": "fixed point theorem", "accept": ["fixed point theorem", "fixed point theorems"], "why": "完全一致がある", "form": "single-concept", "msc": "47H10" },
+    { "q": "central limit theorem", "accept": ["central limit theorem", "central limit theorems"], "why": "完全一致がある", "form": "single-concept" },
+    { "q": "hopf algebra", "accept": ["hopf algebra", "hopf algebras"], "why": "完全一致がある", "form": "single-concept", "msc": "16Txx" },
+    { "q": "quantum group", "accept": ["quantum groups", "quantum group"], "why": "完全一致がある", "form": "single-concept", "msc": "16Txx" },
+    { "q": "spectral sequence", "accept": ["spectral sequence", "spectral sequences"], "why": "完全一致がある", "form": "single-concept", "msc": "18G40" },
+    { "q": "modular forms", "accept": ["modular forms", "modular form"], "why": "完全一致がある", "form": "single-concept", "msc": "11F11" }
+  ]
+}

@@ -1,0 +1,54 @@
+{
+  "note": "概念どうしの関係の固定評価セット。検索クエリの評価（queries.json）は『打った語に辿り着けるか』を測るが、こちらは『概念空間の距離が数学として正しいか』を測る。この2つは別物で、実際に文字列embeddingから文脈ベクトルへ替えたとき前者はほとんど動かず後者だけが激変した。左右の語はすべてコーパスに実在することを確認済み。",
+
+  "related": {
+    "note": "数学として明らかに関連する対。相手が『同一概念（同じクラスタ）』か『関連概念』のどちらかに現れれば正解とする（どちらに出るかは粒度の問題で、繋がっていること自体が本質）。各対の4番目の要素 `relationKind` はPhase 0で追加した任意の層別化タグで、docs/DATA_DICTIONARY.mdの語彙（depends_on|imports|cites|specializes|equivalent_to|generalizes|related_to|uses_concept）から人手で1つ選んだベストエフォートの分類。方向性（subject→object）に自信が持てない対や、単に『繋がっている』以上のことが言えない対は `related_to` にしてある——これは妥協ではなく、その語彙の意味そのもの（ARCHITECTURE_NEXT.md §4.2の『muted: contextual similarity, never a derivation』）。現行のスコアリングロジックでは使われない。",
+    "pairs": [
+      ["riemann hypothesis", "zeta function", "RHはζの零点についての主張", "related_to"],
+      ["riemann hypothesis", "prime numbers", "素数定理の誤差項がRHと同値", "related_to"],
+      ["elliptic curves", "modular forms", "モジュラー性定理", "related_to"],
+      ["elliptic curves", "abelian varieties", "楕円曲線は1次元アーベル多様体", "specializes"],
+      ["brownian motion", "martingales", "BMはマルチンゲール", "specializes"],
+      ["brownian motion", "stochastic differential equations", "SDEの駆動雑音", "related_to"],
+      ["brownian motion", "wiener process", "同じ対象の別名", "equivalent_to"],
+      ["navier-stokes equations", "euler equations", "粘性項を落とすとEuler", "generalizes"],
+      ["quantum groups", "hopf algebras", "量子群はHopf代数", "specializes"],
+      ["lie algebra", "lie group", "Lie対応", "related_to"],
+      ["sobolev spaces", "weak solutions", "弱解はSobolev空間で定義される", "related_to"],
+      ["galois group", "number field", "数体のGalois群", "uses_concept"],
+      ["moduli space", "stable curves", "Deligne–Mumfordコンパクト化", "uses_concept"],
+      ["kähler manifold", "symplectic manifold", "Kähler形式はシンプレクティック形式", "specializes"],
+      ["knot theory", "jones polynomial", "結び目不変量", "uses_concept"],
+      ["spectral sequence", "cohomology", "コホモロジーの計算道具", "uses_concept"],
+      ["random matrices", "eigenvalues", "固有値分布が研究対象そのもの", "uses_concept"]
+    ]
+  },
+
+  "unrelated": {
+    "note": "分野をまたいで、通常は一緒に語られない対。ここが繋がっていたら距離が壊れている。",
+    "pairs": [
+      ["elliptic curves", "navier-stokes equations"],
+      ["brownian motion", "galois group"],
+      ["lie algebra", "central limit theorem"],
+      ["moduli space", "sobolev space"],
+      ["hopf algebra", "weak solutions"],
+      ["knot theory", "prime numbers"]
+    ]
+  },
+
+  "variants": {
+    "note": "同じ概念の綴り違い。『関連概念』段階に出てはいけない——それは『同一概念』段階の担当で、ここに重ねると本来出るべき別概念を押し出す。この指標は旧実装（文字列embedding）で86.5%だった。relationKindのタグは付けない——これは関係の種類ではなくエンティティ解決（同一性）の問題なので、docs/DATA_DICTIONARY.mdの語彙の対象外。",
+    "pairs": [
+      ["zeta function", "zeta functions"],
+      ["elliptic curve", "elliptic curves"],
+      ["moduli space", "moduli spaces"],
+      ["quantum group", "quantum groups"],
+      ["brownian motion", "brownian motions"],
+      ["navier-stokes equations", "navier--stokes equations"],
+      ["abelian variety", "abelian varieties"],
+      ["hopf algebra", "hopf algebras"],
+      ["sobolev space", "sobolev spaces"],
+      ["prime number", "prime numbers"]
+    ]
+  }
+}

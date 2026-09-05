@@ -1,0 +1,2290 @@
+:root {
+  --bg: #0f1115;
+  --panel: #171a21;
+  --panel-border: #2a2f3a;
+  --text: #e8eaf0;
+  --text-dim: #9aa5b1;
+  --accent: #5b7fff;
+  font-family: "Hiragino Sans", "Yu Gothic", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  min-height: 100vh;
+}
+
+#app {
+  max-width: 980px;
+  margin: 0 auto;
+  padding: 32px 20px 80px;
+}
+
+header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 8px;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+h1 {
+  font-size: 28px;
+  margin: 0;
+  letter-spacing: 0.02em;
+}
+
+.tagline {
+  color: var(--text-dim);
+  margin: 0 0 28px;
+  font-size: 14px;
+}
+
+.lang-toggle {
+  display: flex;
+  gap: 4px;
+  background: var(--panel);
+  border: 1px solid var(--panel-border);
+  border-radius: 999px;
+  padding: 3px;
+}
+
+.lang-toggle button {
+  border: none;
+  background: transparent;
+  color: var(--text-dim);
+  padding: 5px 14px;
+  border-radius: 999px;
+  cursor: pointer;
+  font-size: 13px;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.lang-toggle button.active {
+  background: var(--accent);
+  color: white;
+}
+
+/* ---- 検索バー ---- */
+
+.search-box {
+  width: 100%;
+  padding: 16px 20px;
+  font-size: 16px;
+  border-radius: 14px;
+  border: 1px solid var(--panel-border);
+  background: var(--panel);
+  color: var(--text);
+  outline: none;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.search-box:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(91, 127, 255, 0.25);
+}
+
+.parse-panel {
+  margin-top: 14px;
+  padding: 16px 20px;
+  border-radius: 12px;
+  background: var(--panel);
+  border: 1px solid var(--panel-border);
+  font-size: 14px;
+  transition: opacity 0.2s ease;
+}
+
+.parse-panel .empty {
+  color: var(--text-dim);
+}
+
+.parse-row {
+  display: flex;
+  gap: 10px;
+  margin: 6px 0;
+}
+
+.parse-row .k {
+  color: var(--text-dim);
+  min-width: 110px;
+  flex-shrink: 0;
+}
+
+.parse-row .v {
+  font-family: "Cambria Math", "Latin Modern Math", ui-monospace, Menlo, Consolas, monospace;
+}
+
+.status-pill {
+  display: inline-block;
+  padding: 2px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+}
+
+.status-full {
+  background: rgba(79, 192, 141, 0.2);
+  color: #4fc08d;
+}
+
+.status-partial {
+  background: rgba(255, 184, 79, 0.2);
+  color: #ffb84f;
+}
+
+.status-failed {
+  background: rgba(255, 92, 92, 0.2);
+  color: #ff5c5c;
+}
+
+/* ---- セクション見出し ---- */
+
+section {
+  margin-top: 48px;
+}
+
+section h2 {
+  font-size: 18px;
+  margin-bottom: 4px;
+}
+
+section .section-sub {
+  color: var(--text-dim);
+  font-size: 13px;
+  margin: 0 0 18px;
+}
+
+.hidden {
+  display: none !important;
+}
+
+.field-chip {
+  display: inline-block;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: rgba(91, 127, 255, 0.16);
+  color: var(--accent);
+  font-size: 11px;
+  margin: 1px 3px 1px 0;
+}
+
+/* ---- デモテーブル ---- */
+
+/* デモ判断ノード表は最小幅が広く（実測523px）、そのままだと375px幅の
+   端末でページ全体が横スクロールする。表だけを独立してスクロールさせ、
+   ページ本体は横に動かさない。 */
+#demo-table-root {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+table.demo-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+  background: var(--panel);
+  border: 1px solid var(--panel-border);
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+table.demo-table th,
+table.demo-table td {
+  text-align: left;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--panel-border);
+}
+
+table.demo-table th {
+  color: var(--text-dim);
+  font-weight: 500;
+  font-size: 12px;
+}
+
+table.demo-table tr:last-child td {
+  border-bottom: none;
+}
+
+table.demo-table code {
+  font-family: ui-monospace, Menlo, Consolas, monospace;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+/* ---- 動的タクソノミー（Phase 6, 実データ） ---- */
+
+.dt-status {
+  color: var(--text-dim);
+  padding: 16px 0;
+  font-size: 14px;
+}
+
+.dt-status.dt-error {
+  color: #ff5c5c;
+}
+
+.dt-stats {
+  color: var(--text-dim);
+  font-size: 12px;
+  margin-bottom: 14px;
+  font-family: ui-monospace, Menlo, Consolas, monospace;
+}
+
+.dt-tabs {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 18px;
+}
+
+.dt-tab {
+  background: var(--panel);
+  border: 1px solid var(--panel-border);
+  color: var(--text-dim);
+  padding: 7px 16px;
+  border-radius: 999px;
+  cursor: pointer;
+  font-size: 13px;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.dt-tab.active {
+  background: var(--accent);
+  color: white;
+  border-color: var(--accent);
+}
+
+.dt-tab:hover:not(.active) {
+  background: #20242e;
+}
+
+.dt-back {
+  background: var(--panel);
+  border: 1px solid var(--panel-border);
+  color: var(--text);
+  padding: 6px 14px;
+  border-radius: 8px;
+  cursor: pointer;
+  margin-bottom: 14px;
+  font-size: 13px;
+}
+
+.dt-back:hover {
+  background: #20242e;
+}
+
+.dt-field-heading {
+  font-size: 16px;
+  margin: 0 0 14px;
+  font-family: ui-monospace, Menlo, Consolas, monospace;
+}
+
+.dt-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 10px;
+}
+
+.dt-card {
+  text-align: left;
+  background: var(--panel);
+  border: 1px solid var(--panel-border);
+  border-radius: 10px;
+  padding: 14px 16px;
+  cursor: pointer;
+  color: var(--text);
+  font-family: inherit;
+  transition: border-color 0.15s ease, transform 0.1s ease;
+}
+
+.dt-card:hover {
+  border-color: var(--accent);
+  transform: translateY(-1px);
+}
+
+.dt-card-code {
+  font-family: ui-monospace, Menlo, Consolas, monospace;
+  color: var(--accent);
+  font-size: 12px;
+  margin-bottom: 4px;
+}
+
+.dt-card-title {
+  font-size: 14px;
+  font-weight: 600;
+  margin-bottom: 6px;
+}
+
+.dt-card-meta {
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.dt-cluster-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.dt-cluster-card {
+  background: var(--panel);
+  border: 1px solid var(--panel-border);
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.dt-cluster-head {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  background: transparent;
+  border: none;
+  color: var(--text);
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 13px;
+  text-align: left;
+}
+
+.dt-cluster-head:hover {
+  background: #1c202a;
+}
+
+.dt-cluster-title {
+  flex: 1;
+  font-weight: 600;
+}
+
+.dt-cluster-size {
+  color: var(--text-dim);
+  font-size: 12px;
+}
+
+.dt-confidence {
+  color: #4fc08d;
+  font-size: 12px;
+  background: rgba(79, 192, 141, 0.15);
+  padding: 2px 8px;
+  border-radius: 999px;
+}
+
+.dt-members {
+  border-top: 1px solid var(--panel-border);
+  padding: 10px 16px 14px;
+  animation: explorer-fade-in 0.2s ease;
+}
+
+.dt-novel-hint {
+  color: var(--text-dim);
+  font-size: 12px;
+  margin: 4px 0 10px;
+}
+
+.dt-member-row {
+  display: grid;
+  grid-template-columns: 1fr auto 70px;
+  gap: 10px;
+  align-items: baseline;
+  padding: 5px 0;
+  font-size: 13px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+}
+
+.dt-member-row:last-child {
+  border-bottom: none;
+}
+
+.dt-member-phrase {
+  font-family: "Cambria Math", "Latin Modern Math", ui-monospace, Menlo, Consolas, monospace;
+}
+
+.dt-member-freq {
+  color: var(--text-dim);
+  font-size: 12px;
+}
+
+.dt-member-msc {
+  color: var(--accent);
+  font-size: 11px;
+  font-family: ui-monospace, Menlo, Consolas, monospace;
+  text-align: right;
+}
+
+/* ---- hybrid search（Phase 7） ---- */
+
+.dt-search {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 18px;
+}
+
+.dt-search-input {
+  flex: 1;
+  padding: 10px 14px;
+  font-size: 14px;
+  border-radius: 10px;
+  border: 1px solid var(--panel-border);
+  background: var(--panel);
+  color: var(--text);
+  outline: none;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.dt-search-input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(91, 127, 255, 0.25);
+}
+
+.dt-search-clear {
+  background: var(--panel);
+  border: 1px solid var(--panel-border);
+  color: var(--text-dim);
+  width: 38px;
+  border-radius: 10px;
+  cursor: pointer;
+  font-size: 16px;
+  line-height: 1;
+}
+
+.dt-search-clear:hover {
+  color: var(--text);
+  border-color: var(--accent);
+}
+
+.dt-search-results {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  animation: explorer-fade-in 0.2s ease;
+}
+
+/* ---- 最上段の統合検索 ---- */
+
+.global-search {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 20px;
+}
+
+.global-search-group {
+  flex: 1 1 280px;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.global-search-head {
+  font-size: 11px;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: 2px;
+}
+
+.global-search-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 10px;
+  align-items: baseline;
+  width: 100%;
+  text-align: left;
+  padding: 6px 10px;
+  border-radius: 7px;
+  background: var(--panel);
+  border: 1px solid var(--panel-border);
+  color: var(--text);
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 13px;
+  transition: border-color 0.15s ease;
+}
+
+.global-search-row:hover {
+  border-color: var(--accent);
+}
+
+.global-search-label {
+  font-family: "Cambria Math", "Latin Modern Math", ui-monospace, Menlo, Consolas, monospace;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.global-search-meta {
+  color: var(--text-dim);
+  font-size: 11px;
+}
+
+.global-search-more {
+  align-self: flex-start;
+  margin-top: 2px;
+  padding: 2px 0;
+  background: none;
+  border: none;
+  color: var(--accent);
+  font-family: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.global-search-more:hover {
+  text-decoration: underline;
+}
+
+.global-search-empty {
+  color: var(--text-dim);
+  font-size: 13px;
+}
+
+/* 統合検索で綴り訂正が起きたときの「もしかして」。`.global-search` は
+   概念/判断ノードの2列を横に並べるflex行なので、`flex-basis: 100%`で
+   それより上の専用の行に押し出す。 */
+.global-search-correction {
+  flex-basis: 100%;
+  margin: 0;
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: rgba(91, 127, 255, 0.1);
+  border: 1px solid var(--panel-border);
+  color: var(--text-dim);
+  font-size: 12px;
+}
+
+.dt-search-interpretation {
+  margin: 0;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: rgba(91, 127, 255, 0.1);
+  border: 1px solid var(--panel-border);
+  color: var(--text-dim);
+  font-size: 12px;
+}
+
+/* ヘッドシャードだけで答えている間の一時的な状態であって、クエリの
+   解釈結果（`.dt-search-interpretation`の本来の役目）ではないため、
+   同じ形でも色味だけ変えて区別する。 */
+.dt-index-loading-hint {
+  background: rgba(255, 179, 71, 0.12);
+}
+
+.dt-search-tier-title {
+  font-size: 13px;
+  color: var(--text-dim);
+  margin: 0 0 8px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.dt-search-tier-empty {
+  color: var(--text-dim);
+  font-size: 12px;
+  margin: 0;
+}
+
+.dt-search-tier-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.dt-search-hit {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  border-radius: 8px;
+  background: var(--panel);
+  border: 1px solid var(--panel-border);
+  transition: border-color 0.15s ease;
+  overflow: hidden;
+}
+
+.dt-search-hit:has(.dt-search-hit-main:hover),
+.dt-search-hit:focus-within {
+  border-color: var(--accent);
+}
+
+.dt-search-hit-main {
+  display: grid;
+  /* 4列目は分野集中度。判定できなかった候補には要素自体が無く、
+     auto なのでトラックが0幅に潰れる。 */
+  grid-template-columns: 1fr auto 70px auto;
+  gap: 10px;
+  align-items: baseline;
+  width: 100%;
+  text-align: left;
+  padding: 8px 12px;
+  border: none;
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 13px;
+}
+
+.dt-search-hit-phrase {
+  font-family: "Cambria Math", "Latin Modern Math", ui-monospace, Menlo, Consolas, monospace;
+}
+
+.dt-search-hit-freq {
+  color: var(--text-dim);
+  font-size: 12px;
+}
+
+.dt-search-hit-msc {
+  color: var(--accent);
+  font-size: 11px;
+  font-family: ui-monospace, Menlo, Consolas, monospace;
+  text-align: right;
+}
+
+.dt-search-hit-conc {
+  color: var(--text-dim);
+  font-size: 11px;
+  font-family: ui-monospace, Menlo, Consolas, monospace;
+  text-align: right;
+  min-width: 34px;
+  cursor: help;
+}
+
+.dt-search-hit-papers {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+  padding: 0 12px 8px;
+  border-top: 1px dashed var(--panel-border);
+  margin-top: -1px;
+  padding-top: 6px;
+}
+
+.dt-search-hit-papers-label {
+  font-size: 11px;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+/* 出典は「IDの列」ではなく「題名を持つ文書の一覧」として出す
+   （export.rs::PapersExport 参照）。1行1論文にして、題名を読める
+   大きさで、IDと年と分類はその下に小さく添える。 */
+.dt-search-hit-papers {
+  display: block;
+}
+
+.dt-paper-list {
+  list-style: none;
+  margin: 4px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+}
+
+.dt-paper {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.dt-paper-title {
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--accent);
+  text-decoration: none;
+  border-bottom: 1px solid transparent;
+  align-self: start;
+}
+
+.dt-paper-title:hover {
+  border-bottom-color: var(--accent);
+}
+
+.dt-paper-meta {
+  font-family: ui-monospace, Menlo, Consolas, monospace;
+  font-size: 10.5px;
+  color: var(--text-dim);
+  letter-spacing: 0.01em;
+}
+
+.dt-search-hit-aliases {
+  margin: 0;
+  padding: 4px 12px 0;
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--text-dim);
+}
+
+/* 型付き関係（relations.rs）。根拠文が主役なので、確信度バッジは控えめに
+   添え、"要検証"であることを常に見える位置に置く。 */
+.dt-search-hit-relations {
+  padding: 8px 12px 8px;
+  border-top: 1px dashed var(--panel-border);
+  margin-top: -1px;
+}
+
+.dt-search-hit-relations-label {
+  font-size: 11px;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.dt-relation-list {
+  list-style: none;
+  margin: 6px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.dt-relation {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.dt-relation-head {
+  font-size: 12px;
+  color: var(--text);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.dt-relation-target {
+  font: inherit;
+  font-weight: 600;
+  color: var(--accent);
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+}
+
+.dt-relation-target:hover {
+  text-decoration: underline;
+}
+
+.dt-relation-badge {
+  font-size: 9.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  padding: 1px 6px;
+  border-radius: 999px;
+  cursor: help;
+}
+
+.dt-relation-badge-confirmed {
+  color: var(--accent);
+  border: 1px solid var(--accent);
+}
+
+.dt-relation-badge-grounded {
+  color: var(--text-dim);
+  border: 1px solid var(--panel-border);
+}
+
+.dt-relation-evidence {
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--text-dim);
+  font-style: italic;
+}
+
+.dt-relation-evidence a {
+  font-family: ui-monospace, Menlo, Consolas, monospace;
+  font-style: normal;
+  color: var(--text-dim);
+  text-decoration: underline;
+}
+
+/* 診断⑤: 概念地図（`conceptMap.ts`/`conceptMapView.ts`）。 */
+
+.dt-map-toggle {
+  align-self: flex-start;
+  margin: 0 12px 8px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--panel-border);
+  background: transparent;
+  color: var(--text-dim);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.dt-map-toggle:hover,
+.dt-map-toggle[aria-expanded="true"] {
+  color: var(--text);
+  border-color: var(--accent);
+}
+
+.dt-concept-map {
+  border-top: 1px dashed var(--panel-border);
+  padding: 10px 12px 12px;
+}
+
+.dt-concept-map-svg {
+  width: 100%;
+  height: 380px;
+  display: block;
+}
+
+.dt-map-node circle {
+  fill: var(--lin-node);
+  stroke: var(--text-dim);
+  stroke-width: 1.5;
+}
+
+.dt-map-node:hover circle {
+  stroke: var(--accent);
+}
+
+.dt-map-node-focus circle {
+  fill: var(--accent);
+  stroke: var(--text);
+}
+
+.dt-map-node text {
+  fill: var(--text-dim);
+  font-size: 11px;
+  pointer-events: none;
+}
+
+.dt-map-node-focus text {
+  fill: var(--text);
+  font-weight: 600;
+}
+
+.dt-concept-map-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 8px;
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.dt-concept-map-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.dt-map-swatch {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+.dt-map-swatch-line {
+  width: 14px;
+  height: 2px;
+  border-radius: 0;
+}
+
+.dt-concept-map-hint {
+  margin: 8px 0 0;
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.dt-search-hit-papers-loading {
+  margin: 0;
+  padding: 0 12px 8px;
+  font-size: 11px;
+  color: var(--text-dim);
+  opacity: 0.75;
+}
+
+/* ---- 証明グラフ（Phase 10, 実データ） ---- */
+
+.pg-status {
+  color: var(--text-dim);
+  padding: 16px 0;
+  font-size: 14px;
+}
+
+.pg-status.pg-error {
+  color: #ff5c5c;
+}
+
+.pg-stats {
+  color: var(--text-dim);
+  font-size: 12px;
+  margin-bottom: 14px;
+  font-family: ui-monospace, Menlo, Consolas, monospace;
+}
+
+.pg-stats a {
+  color: var(--accent);
+}
+
+.pg-search {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 18px;
+}
+
+.pg-search-input {
+  flex: 1;
+  padding: 10px 14px;
+  font-size: 14px;
+  border-radius: 10px;
+  border: 1px solid var(--panel-border);
+  background: var(--panel);
+  color: var(--text);
+  outline: none;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.pg-search-input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(91, 127, 255, 0.25);
+}
+
+.pg-search-clear {
+  background: var(--panel);
+  border: 1px solid var(--panel-border);
+  color: var(--text-dim);
+  width: 38px;
+  border-radius: 10px;
+  cursor: pointer;
+  font-size: 16px;
+  line-height: 1;
+}
+
+.pg-search-clear:hover {
+  color: var(--text);
+  border-color: var(--accent);
+}
+
+.pg-back {
+  background: var(--panel);
+  border: 1px solid var(--panel-border);
+  color: var(--text);
+  padding: 6px 14px;
+  border-radius: 8px;
+  cursor: pointer;
+  margin-bottom: 14px;
+  font-size: 13px;
+}
+
+.pg-back:hover {
+  background: #20242e;
+}
+
+.pg-file-heading {
+  font-size: 15px;
+  margin: 0 0 14px;
+  font-family: ui-monospace, Menlo, Consolas, monospace;
+  color: var(--text-dim);
+}
+
+.pg-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 10px;
+}
+
+.pg-card {
+  text-align: left;
+  background: var(--panel);
+  border: 1px solid var(--panel-border);
+  border-radius: 10px;
+  padding: 14px 16px;
+  cursor: pointer;
+  color: var(--text);
+  font-family: inherit;
+  transition: border-color 0.15s ease, transform 0.1s ease;
+}
+
+.pg-card:hover {
+  border-color: var(--accent);
+  transform: translateY(-1px);
+}
+
+.pg-card-title {
+  font-size: 13px;
+  font-family: ui-monospace, Menlo, Consolas, monospace;
+  margin-bottom: 6px;
+  word-break: break-all;
+}
+
+.pg-card-meta {
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.pg-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.pg-row {
+  display: grid;
+  /* 「グラフ上の関連」段階だけ4列目（経路の説明）が付く。列が余った場合に
+     幅を食わないよう auto にしてある。 */
+  grid-template-columns: 90px 1fr 2fr auto;
+  gap: 10px;
+  align-items: baseline;
+  width: 100%;
+  text-align: left;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: var(--panel);
+  border: 1px solid var(--panel-border);
+  color: var(--text);
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 13px;
+  transition: border-color 0.15s ease;
+  overflow: hidden;
+}
+
+.pg-row:hover {
+  border-color: var(--accent);
+}
+
+.pg-row-kind {
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(91, 127, 255, 0.16);
+  color: var(--accent);
+  justify-self: start;
+  white-space: nowrap;
+}
+
+.pg-row-name {
+  font-family: ui-monospace, Menlo, Consolas, monospace;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pg-row-statement {
+  color: var(--text-dim);
+  font-family: "Cambria Math", "Latin Modern Math", ui-monospace, Menlo, Consolas, monospace;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pg-row-via {
+  color: var(--accent);
+  font-size: 11px;
+  font-family: ui-monospace, Menlo, Consolas, monospace;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 260px;
+  justify-self: end;
+}
+
+.pg-empty {
+  color: var(--text-dim);
+  font-size: 13px;
+}
+
+/* ---- 証明グラフの多段階検索 ---- */
+
+.pg-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 18px;
+  margin-bottom: 16px;
+}
+
+.pg-filter-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.pg-filter-label {
+  font-size: 11px;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.pg-filter-chip {
+  padding: 3px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--panel-border);
+  background: var(--panel);
+  color: var(--text-dim);
+  font-family: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  transition:
+    border-color 0.15s ease,
+    color 0.15s ease;
+}
+
+.pg-filter-chip:hover:not(.active) {
+  border-color: var(--accent);
+}
+
+.pg-filter-chip.active {
+  border-color: var(--accent);
+  background: rgba(91, 127, 255, 0.16);
+  color: var(--accent);
+}
+
+.pg-search-results {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  animation: explorer-fade-in 0.2s ease;
+}
+
+.pg-search-tier-title {
+  font-size: 13px;
+  color: var(--text-dim);
+  margin: 0 0 2px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.pg-search-tier-hint {
+  color: var(--text-dim);
+  font-size: 11px;
+  margin: 0 0 8px;
+  opacity: 0.8;
+}
+
+.pg-detail {
+  animation: explorer-fade-in 0.2s ease;
+}
+
+.pg-detail-header {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.pg-detail-name {
+  font-size: 17px;
+  font-family: ui-monospace, Menlo, Consolas, monospace;
+  margin: 0;
+  word-break: break-all;
+}
+
+.pg-detail-statement {
+  background: var(--panel);
+  border: 1px solid var(--panel-border);
+  border-radius: 10px;
+  padding: 14px 16px;
+  font-family: "Cambria Math", "Latin Modern Math", ui-monospace, Menlo, Consolas, monospace;
+  font-size: 14px;
+  margin-bottom: 14px;
+  word-break: break-word;
+}
+
+.pg-detail-context {
+  margin-bottom: 14px;
+}
+
+.pg-detail-label {
+  color: var(--text-dim);
+  font-size: 12px;
+  margin-bottom: 6px;
+}
+
+.pg-context-item {
+  display: block;
+  font-family: ui-monospace, Menlo, Consolas, monospace;
+  font-size: 12px;
+  color: var(--text-dim);
+  padding: 3px 0;
+}
+
+.pg-detail-meta {
+  display: flex;
+  gap: 14px;
+  align-items: center;
+  color: var(--text-dim);
+  font-size: 12px;
+  margin-bottom: 20px;
+  font-family: ui-monospace, Menlo, Consolas, monospace;
+}
+
+.pg-parse-status {
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  cursor: help;
+}
+
+.pg-parse-full {
+  background: rgba(79, 192, 141, 0.2);
+  color: #4fc08d;
+}
+
+.pg-parse-partial {
+  background: rgba(255, 184, 79, 0.2);
+  color: #ffb84f;
+}
+
+.pg-parse-failed {
+  background: rgba(255, 92, 92, 0.2);
+  color: #ff5c5c;
+}
+
+/* full/partial/failedは「形式言語をどこまでパースできたか」という
+   1本の軸（緑→橙→赤の成功度グラデーション）だが、informalは別の軸
+   （そもそも形式言語ではない、LaTeXの定理文）——同じ配色にすると
+   「パースの出来が悪い」という誤った含意になるため、accentの青で
+   視覚的に別枠だと分かるようにする。 */
+.pg-parse-informal {
+  background: rgba(91, 127, 255, 0.2);
+  color: var(--accent);
+}
+
+.pg-related {
+  margin-top: 16px;
+}
+
+.pg-related-empty {
+  color: var(--text-dim);
+  font-size: 12px;
+  margin: 0;
+}
+
+.pg-chip-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.pg-chip {
+  background: rgba(91, 127, 255, 0.12);
+  border: 1px solid var(--panel-border);
+  color: var(--accent);
+  padding: 4px 10px;
+  border-radius: 999px;
+  cursor: pointer;
+  font-family: ui-monospace, Menlo, Consolas, monospace;
+  font-size: 12px;
+}
+
+.pg-chip:hover {
+  border-color: var(--accent);
+  background: rgba(91, 127, 255, 0.22);
+}
+
+.pg-morphism-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.pg-morphism-row {
+  background: var(--panel);
+  border: 1px solid var(--panel-border);
+  border-radius: 8px;
+  padding: 8px 10px;
+}
+
+.pg-morphism-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--text);
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 13px;
+}
+
+.pg-morphism-kind {
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(91, 127, 255, 0.16);
+  color: var(--accent);
+  white-space: nowrap;
+}
+
+.pg-morphism-arrow {
+  color: var(--text-dim);
+}
+
+.pg-morphism-other {
+  font-family: ui-monospace, Menlo, Consolas, monospace;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pg-morphism-status {
+  margin-left: auto;
+  font-size: 10px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: rgba(255, 184, 79, 0.2);
+  color: #ffb84f;
+  white-space: nowrap;
+  cursor: help;
+}
+
+.pg-morphism-rationale {
+  margin-top: 4px;
+  color: var(--text-dim);
+  font-size: 11px;
+}
+
+.dt-search-empty {
+  color: var(--text-dim);
+  font-size: 13px;
+}
+
+/* ---- 層3〜5デモ（射・戦略・推論） ---- */
+
+.l35-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.l35-box {
+  background: var(--panel);
+  border: 1px solid var(--panel-border);
+  border-radius: 10px;
+  padding: 16px 18px;
+}
+
+.l35-box-title {
+  margin: 0 0 12px;
+  font-size: 14px;
+  color: var(--text-dim);
+  font-weight: 600;
+}
+
+.l35-error {
+  background: rgba(255, 92, 92, 0.14);
+  border: 1px solid rgba(255, 92, 92, 0.4);
+  color: #ff5c5c;
+  border-radius: 8px;
+  padding: 10px 14px;
+  font-size: 13px;
+}
+
+.l35-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 12px;
+}
+
+.l35-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.l35-select,
+.l35-input {
+  background: var(--bg);
+  border: 1px solid var(--panel-border);
+  color: var(--text);
+  border-radius: 6px;
+  padding: 6px 10px;
+  font-size: 13px;
+  font-family: inherit;
+}
+
+.l35-input {
+  flex: 1;
+  min-width: 160px;
+}
+
+.l35-button {
+  background: var(--accent);
+  border: none;
+  color: white;
+  border-radius: 6px;
+  padding: 7px 16px;
+  font-size: 13px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.l35-button:hover {
+  filter: brightness(1.1);
+}
+
+.l35-button-small {
+  padding: 4px 10px;
+  font-size: 12px;
+}
+
+.l35-strategy-row {
+  margin-top: 8px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.l35-strategy-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.l35-strategy-chip {
+  background: rgba(79, 192, 141, 0.16);
+  color: #4fc08d;
+  padding: 2px 9px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-family: ui-monospace, Menlo, Consolas, monospace;
+}
+
+.l35-strategy-input {
+  min-width: 140px;
+  flex: 1;
+}
+
+.l35-quotient-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.l35-quotient-row {
+  font-size: 13px;
+}
+
+.l35-inference-result {
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--panel-border);
+  font-size: 13px;
+}
+
+.l35-hops {
+  margin-top: 8px;
+  font-family: ui-monospace, Menlo, Consolas, monospace;
+  font-size: 12px;
+  color: var(--text-dim);
+  line-height: 1.8;
+}
+
+/* ──────────────────────────────────────────────────────────────
+   TeX入力とライブ組版（web/src/tex.ts）
+   ────────────────────────────────────────────────────────────── */
+
+.search-hint {
+  margin: 8px 2px 0;
+  font-size: 12px;
+  line-height: 1.7;
+  color: var(--text-dim);
+  font-family: ui-monospace, Menlo, Consolas, monospace;
+}
+
+.math-preview {
+  margin-top: 12px;
+  padding: 14px 18px;
+  border-radius: 12px;
+  background: var(--panel);
+  border: 1px solid var(--panel-border);
+  border-left: 3px solid var(--accent);
+}
+
+.math-preview-label {
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+  margin-bottom: 8px;
+}
+
+.math-preview-body {
+  font-size: 20px;
+  line-height: 1.6;
+  overflow-x: auto;
+  padding-bottom: 4px;
+}
+
+.math-preview-body.is-error {
+  color: #ff8f8f;
+}
+
+.math-preview-body math {
+  font-size: 1em;
+}
+
+.math-preview-terms {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px dashed var(--panel-border);
+}
+
+.math-preview-terms-label,
+.math-preview-terms-empty {
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.term-chip {
+  font-size: 12px;
+  padding: 2px 9px;
+  border-radius: 999px;
+  border: 1px solid var(--panel-border);
+}
+
+/* 英単語（概念索引に当てる語）と記号（Lean命題に当てる文字）を
+   見た目で分ける——どちらの索引を叩いているかが分かるように。 */
+.term-chip.is-word {
+  background: rgba(91, 127, 255, 0.14);
+  color: var(--accent);
+}
+
+.term-chip.is-symbol {
+  background: rgba(120, 200, 160, 0.14);
+  color: #7fd6ab;
+  font-family: "Cambria Math", "STIX Two Math", ui-monospace, monospace;
+  font-size: 14px;
+}
+
+/* ──────────────────────────────────────────────────────────────
+   系譜ビュー（web/src/lineage.ts, lineageView.ts）
+   ────────────────────────────────────────────────────────────── */
+
+:root {
+  --lin-spine: #5b7fff;
+  --lin-dep: #4a5468;
+  --lin-special: #d99a4e;
+  --lin-equiv: #58b39a;
+  --lin-node: #1c2029;
+}
+
+.pg-lineage-title {
+  margin: 18px 0 10px;
+  font-size: 15px;
+  color: var(--text);
+}
+
+.lin-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.lin-summary {
+  margin: 0;
+  font-size: 12.5px;
+  color: var(--text-dim);
+}
+
+.lin-controls {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.lin-ctl {
+  font-size: 12px;
+  padding: 5px 11px;
+  border-radius: 999px;
+  border: 1px solid var(--panel-border);
+  background: transparent;
+  color: var(--text-dim);
+  cursor: pointer;
+}
+
+.lin-ctl:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--text);
+}
+
+.lin-ctl:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.lin-ctl.active {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: rgba(91, 127, 255, 0.12);
+}
+
+.lin-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  margin: 10px 0 6px;
+  font-size: 11.5px;
+  color: var(--text-dim);
+}
+
+.lin-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.lin-legend-line {
+  width: 22px;
+  height: 0;
+  border-top-width: 2px;
+  border-top-style: solid;
+}
+
+.lin-legend-line.is-spine {
+  border-top-color: var(--lin-spine);
+  border-top-width: 3px;
+}
+.lin-legend-line.is-dependency {
+  border-top-color: var(--lin-dep);
+}
+.lin-legend-line.is-specialization {
+  border-top-color: var(--lin-special);
+  border-top-style: dashed;
+}
+.lin-legend-line.is-equivalence {
+  border-top-color: var(--lin-equiv);
+  border-top-style: dotted;
+  border-top-width: 3px;
+}
+
+/* 図は幅が可変（段に6件並ぶと1,200px を超える）。ページ本体を横に
+   はみ出させず、この枠の中だけで横スクロールさせる。 */
+.lin-viewport {
+  margin-top: 6px;
+  overflow: auto;
+  max-height: 70vh;
+  border: 1px solid var(--panel-border);
+  border-radius: 12px;
+  background: radial-gradient(circle at 1px 1px, rgba(255, 255, 255, 0.045) 1px, transparent 0) 0 0 /
+    22px 22px;
+}
+
+.lin-canvas {
+  position: relative;
+}
+
+.lin-edges {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.lin-edge {
+  fill: none;
+  stroke: var(--lin-dep);
+  stroke-width: 1.6;
+  transition: opacity 0.15s ease;
+}
+
+.lin-edge.is-spine {
+  stroke: var(--lin-spine);
+  stroke-width: 2.8;
+}
+
+.lin-edge.is-specialization,
+.lin-edge.is-generalization {
+  stroke: var(--lin-special);
+  stroke-dasharray: 6 4;
+}
+
+.lin-edge.is-equivalence {
+  stroke: var(--lin-equiv);
+  stroke-dasharray: 2 4;
+  stroke-width: 2;
+}
+
+.lin-edge.is-implication {
+  stroke: var(--lin-dep);
+  stroke-dasharray: 8 3;
+}
+
+.lin-edge.is-dimmed {
+  opacity: 0.28;
+}
+
+.lin-edge.is-active {
+  opacity: 1;
+  stroke-width: 3;
+}
+
+.lin-arrow-head {
+  stroke: none;
+}
+.lin-arrow-head.is-dependency {
+  fill: var(--lin-dep);
+}
+.lin-arrow-head.is-spine {
+  fill: var(--lin-spine);
+}
+.lin-arrow-head.is-relation {
+  fill: var(--lin-special);
+}
+
+.lin-node {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 3px;
+  padding: 6px 10px;
+  text-align: left;
+  border-radius: 9px;
+  border: 1px solid var(--panel-border);
+  background: var(--lin-node);
+  color: var(--text);
+  cursor: pointer;
+  overflow: hidden;
+  transition: border-color 0.15s ease, transform 0.1s ease, box-shadow 0.15s ease;
+}
+
+.lin-node:hover {
+  border-color: var(--accent);
+  transform: translateY(-1px);
+}
+
+.lin-node:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.lin-node.is-spine {
+  border-color: rgba(91, 127, 255, 0.55);
+}
+
+.lin-node.is-root {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent) inset;
+}
+
+/* 根より「上」——この定理を使っている側。下向きの依存とは向きが逆なので、
+   破線の枠にして別の階層であることを示す。 */
+.lin-node.is-above {
+  background: transparent;
+  border-style: dashed;
+  opacity: 0.85;
+}
+
+.lin-node.is-selected {
+  box-shadow: 0 0 0 2px var(--accent);
+  border-color: var(--accent);
+}
+
+.lin-node-name {
+  font-family: ui-monospace, Menlo, Consolas, monospace;
+  font-size: 11.5px;
+  line-height: 1.35;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  word-break: break-all;
+}
+
+.lin-node-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 10px;
+  color: var(--text-dim);
+}
+
+.lin-node-kind {
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.lin-node.is-definition .lin-node-kind {
+  color: var(--lin-equiv);
+}
+
+.lin-node-more {
+  padding: 0 5px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+/* 証明の概略（背骨を読み下したもの） */
+
+.lin-outline {
+  margin-top: 18px;
+  padding: 16px 18px;
+  border-radius: 12px;
+  border: 1px solid var(--panel-border);
+  background: var(--panel);
+}
+
+.lin-outline-title {
+  margin: 0 0 4px;
+  font-size: 14px;
+}
+
+.lin-outline-hint {
+  margin: 0 0 12px;
+  font-size: 12px;
+  color: var(--text-dim);
+  line-height: 1.7;
+}
+
+.lin-steps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.lin-step {
+  position: relative;
+  padding-left: 26px;
+}
+
+/* 段と段を縦線で繋いで、番号の列が1本の鎖に見えるようにする。 */
+.lin-step::before {
+  content: "";
+  position: absolute;
+  left: 9px;
+  top: 20px;
+  bottom: -4px;
+  width: 2px;
+  background: linear-gradient(var(--lin-spine), rgba(91, 127, 255, 0.25));
+}
+
+.lin-step:last-child::before {
+  display: none;
+}
+
+.lin-step-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  width: 100%;
+  padding: 7px 0;
+  background: transparent;
+  border: none;
+  color: var(--text);
+  cursor: pointer;
+  text-align: left;
+}
+
+.lin-step-marker {
+  position: absolute;
+  left: 0;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--lin-spine);
+  color: #fff;
+  font-size: 11px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+}
+
+.lin-step-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+}
+
+.lin-step-name {
+  font-family: ui-monospace, Menlo, Consolas, monospace;
+  font-size: 13px;
+  word-break: break-all;
+}
+
+.lin-step-because {
+  font-size: 11.5px;
+  color: var(--text-dim);
+}
+
+.lin-step-caret {
+  color: var(--text-dim);
+  font-size: 11px;
+  padding-top: 3px;
+}
+
+.lin-step-detail {
+  padding: 4px 0 12px;
+}
+
+.lin-step-supports {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.lin-step-supports-label {
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+/* 命題本文 */
+
+.lin-statement {
+  font-family: "Cambria Math", "STIX Two Math", "Latin Modern Math", ui-monospace, Menlo, Consolas,
+    monospace;
+  font-size: 15px;
+  line-height: 1.9;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.22);
+  border: 1px solid var(--panel-border);
+  overflow-x: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* 命題の中に現れる識別子のうち、実際にグラフ上の判断であるものだけを
+   押せるようにする。「この記号は何だったか」を別の欄を探さずに追える。 */
+.lin-ident {
+  font: inherit;
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--accent);
+  cursor: pointer;
+  border-bottom: 1px dotted currentColor;
+}
+
+.lin-ident:hover {
+  background: rgba(91, 127, 255, 0.16);
+}
+
+/* 選んだ判断の詳細 */
+
+.lin-detail {
+  margin-top: 16px;
+  padding: 16px 18px;
+  border-radius: 12px;
+  border: 1px solid var(--panel-border);
+  background: var(--panel);
+}
+
+.lin-detail-head {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.lin-detail-name {
+  margin: 0;
+  font-family: ui-monospace, Menlo, Consolas, monospace;
+  font-size: 15px;
+  word-break: break-all;
+  flex: 1;
+  min-width: 0;
+}
+
+.lin-detail-context,
+.lin-detail-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 12px;
+}
+
+.lin-detail-label {
+  font-size: 11px;
+  color: var(--text-dim);
+  letter-spacing: 0.04em;
+}
+
+.lin-detail-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-top: 10px;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.lin-src {
+  font-family: ui-monospace, Menlo, Consolas, monospace;
+}
+
+.lin-arxiv {
+  color: var(--accent);
+  text-decoration: none;
+  border-bottom: 1px solid rgba(91, 127, 255, 0.4);
+}
+
+.lin-arxiv:hover {
+  border-bottom-color: var(--accent);
+}
+
+.lin-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(91, 127, 255, 0.1);
+  border: 1px solid var(--panel-border);
+  color: var(--text);
+  padding: 4px 10px;
+  border-radius: 999px;
+  cursor: pointer;
+  font-family: ui-monospace, Menlo, Consolas, monospace;
+  font-size: 11.5px;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lin-chip:hover {
+  border-color: var(--accent);
+}
+
+.lin-chip-rel {
+  font-family: inherit;
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: rgba(217, 154, 78, 0.18);
+  color: var(--lin-special);
+}
+
+.lin-chip.is-equivalence .lin-chip-rel {
+  background: rgba(88, 179, 154, 0.18);
+  color: var(--lin-equiv);
+}
+
+.lin-chip.is-definition {
+  color: var(--lin-equiv);
+}
+
+/* 射のstatus（proposed/accepted/rejected）バッジ。ヒューリスティックが
+   機械的に提案しただけの未承認候補を、承認済みの事実であるかのように
+   見せないための必須表示——rationaleのツールチップだけに埋めない。 */
+.lin-chip-status {
+  font-family: inherit;
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  padding: 1px 6px;
+  border-radius: 999px;
+  text-transform: uppercase;
+}
+
+.lin-chip-status-proposed {
+  background: rgba(255, 184, 79, 0.2);
+  color: #ffb84f;
+}
+
+.lin-chip-status-accepted {
+  background: rgba(79, 192, 141, 0.2);
+  color: #4fc08d;
+}
+
+.lin-chip-status-rejected {
+  background: rgba(255, 92, 92, 0.2);
+  color: #ff5c5c;
+}
+
+.lin-more {
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.lin-to-concepts {
+  margin-top: 14px;
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+@media (max-width: 640px) {
+  .lin-viewport {
+    max-height: 60vh;
+  }
+
+  .lin-head {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}
+
+.lin-step-rest {
+  padding: 10px 0 0 26px;
+  font-size: 11.5px;
+  color: var(--text-dim);
+  line-height: 1.7;
+}
+
+.lin-step-rest::before {
+  display: none;
+}
+
+/* ──────────────────────────────────────────────────────────────
+   Lean貼り付け区画（web/src/leanPlayground.ts）
+   ────────────────────────────────────────────────────────────── */
+
+.lp-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.lp-input-box {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.lp-textarea {
+  width: 100%;
+  min-height: 160px;
+  padding: 12px 14px;
+  border-radius: 10px;
+  border: 1px solid var(--panel-border);
+  background: var(--panel);
+  color: var(--text);
+  font-family: ui-monospace, Menlo, Consolas, monospace;
+  font-size: 13px;
+  line-height: 1.6;
+  resize: vertical;
+  outline: none;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.lp-textarea:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(91, 127, 255, 0.25);
+}
+
+.lp-controls {
+  display: flex;
+  gap: 8px;
+}
+
+.lp-ctl {
+  font-size: 12px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--panel-border);
+  background: transparent;
+  color: var(--text-dim);
+  cursor: pointer;
+}
+
+.lp-ctl:hover {
+  border-color: var(--accent);
+  color: var(--text);
+}
+
+.lp-empty {
+  color: var(--text-dim);
+  font-size: 13px;
+}
+
+.lp-stats {
+  margin: 0;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: rgba(91, 127, 255, 0.1);
+  border: 1px solid var(--panel-border);
+  color: var(--text-dim);
+  font-size: 12.5px;
+}
+
+.lp-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.lp-row {
+  display: grid;
+  grid-template-columns: 90px 1fr 2fr auto;
+  gap: 10px;
+  align-items: baseline;
+  width: 100%;
+  text-align: left;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: var(--panel);
+  border: 1px solid var(--panel-border);
+  color: var(--text);
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 13px;
+  transition: border-color 0.15s ease;
+}
+
+.lp-row:hover {
+  border-color: var(--accent);
+}
+
+.lp-row.is-selected {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent) inset;
+}
+
+.lp-row-name {
+  font-family: ui-monospace, Menlo, Consolas, monospace;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.lp-row-statement {
+  color: var(--text-dim);
+  font-family: "Cambria Math", "Latin Modern Math", ui-monospace, Menlo, Consolas, monospace;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.lp-lineage {
+  margin-top: 4px;
+}
+
+@media (max-width: 640px) {
+  .lp-row {
+    grid-template-columns: 1fr;
+    justify-items: start;
+  }
+
+  .lp-row-statement {
+    white-space: normal;
+  }
+}

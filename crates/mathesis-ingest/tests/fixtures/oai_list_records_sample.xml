@@ -1,0 +1,71 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<OAI-PMH xmlns="http://www.openarchives.org/OAI/2.0/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.openarchives.org/OAI/2.0/ http://www.openarchives.org/OAI/2.0/OAI-PMH.xsd">
+  <responseDate>2026-09-01T03:11:00Z</responseDate>
+  <request verb='ListRecords' metadataPrefix='arXivRaw' set='math:math:CT'>http://oaipmh.arxiv.org/oai</request>
+  <ListRecords>
+                    <record>
+                <header>
+        <identifier>oai:arXiv.org:cs/9812019</identifier>
+        <datestamp>2005-09-17</datestamp>
+            <setSpec>cs:cs:LO</setSpec>
+            <setSpec>math:math:CT</setSpec>
+    </header>
+
+            <metadata>
+                        <arXivRaw xmlns="http://arxiv.org/OAI/arXivRaw/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://arxiv.org/OAI/arXivRaw/ https://oaipmh.arxiv.org/OAI/arXivRaw.xsd">
+        <id>cs/9812019</id>
+        <submitter>Peter M. Hines</submitter>
+            <version version="v1">
+                <date>Wed, 16 Dec 1998 20:49:46 GMT</date>
+                <size>17kb</size>
+            </version>
+        <title>Symmetries and transitions of bounded Turing machines</title>
+        <authors>Peter M. Hines</authors>
+        <categories>cs.LO math.CT</categories>
+            <comments>21 pages, submitted</comments>
+            <acm-class>None</acm-class>
+            <abstract>  We consider the structures given by repeatedly generalising the definition of finite state automata by symmetry considerations, and constructing analogues of transition monoids at each step. This approach first gives us non-deterministic automata, then (non-deterministic) two-way automata and bounded Turing machines --- that is, Turing machines where the read / write head is unable to move past the end of the input word.
+  In the case of two-way automata, the transition monoids generalise to endomorphism monoids in compact closed categories. These use Girard&#39;s resolution formula (from the Geometry of Interaction representation of linear logic) to construct the images of singleton words.
+  In the case of bounded Turing machines, the transition homomorphism generalises to a monoid homomorphism from the natural numbers to a monoid constructed from the union of endomorphism monoids of a compact closed category, together with an appropriate composition. These use Girard&#39;s execution formula (also from the Geometry of Interaction representation of linear logic) to construct images of singletons.</abstract>
+    </arXivRaw>
+
+            </metadata>
+        </record>
+
+                    <record>
+                <header>
+        <identifier>oai:arXiv.org:math-ph/0008003</identifier>
+        <datestamp>2005-09-17</datestamp>
+            <setSpec>physics:math-ph</setSpec>
+            <setSpec>math:math:MP</setSpec>
+            <setSpec>math:math:CT</setSpec>
+            <setSpec>math:math:OA</setSpec>
+            <setSpec>math:math:SG</setSpec>
+    </header>
+
+            <metadata>
+                        <arXivRaw xmlns="http://arxiv.org/OAI/arXivRaw/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://arxiv.org/OAI/arXivRaw/ https://oaipmh.arxiv.org/OAI/arXivRaw.xsd">
+        <id>math-ph/0008003</id>
+        <submitter>N. P. Landsman</submitter>
+            <version version="v1">
+                <date>Wed, 02 Aug 2000 12:32:49 GMT</date>
+                <size>19kb</size>
+            </version>
+            <version version="v2">
+                <date>Mon, 21 Aug 2000 16:14:00 GMT</date>
+                <size>30kb</size>
+            </version>
+        <title>Bicategories of operator algebras and Poisson manifolds</title>
+        <authors>N.P. Landsman (Univ. of Amsterdam)</authors>
+        <categories>math-ph math.CT math.MP math.OA math.SG</categories>
+            <comments>15 pages. Style file updated (refs. were not numbered)</comments>
+            <msc-class>18D05; 46L08; 22A22; 53D17</msc-class>
+            <abstract>  It is well known that rings are the objects of a bicategory, whose arrows are bimodules, composed through the bimodule tensor product. We give an analogous bicategorical description of C*-algebras, von Neumann algebras, Lie groupoids, symplectic groupoids, and Poisson manifolds. The upshot is that known definitions of Morita equivalence for any of these cases amount to isomorphism of objects in the pertinent bicategory.</abstract>
+    </arXivRaw>
+
+            </metadata>
+        </record>
+
+  <resumptionToken expirationDate="2026-09-02T00:00:00Z">verb%3DListRecords%26metadataPrefix%3DarXivRaw%26set%3Dmath%253Amath%253ACT%26from%3D2011-06-29%26skip%3D0</resumptionToken>
+  </ListRecords>
+</OAI-PMH>

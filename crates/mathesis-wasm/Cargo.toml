@@ -1,0 +1,15 @@
+[package]
+name = "mathesis-wasm"
+version.workspace = true
+edition.workspace = true
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+mathesis-ast = { path = "../mathesis-ast" }
+mathesis-lean-parse = { path = "../mathesis-lean-parse" }
+wasm-bindgen = "0.2"
+serde = { version = "1", features = ["derive"] }
+serde-wasm-bindgen = "0.6"
+console_error_panic_hook = "0.1"

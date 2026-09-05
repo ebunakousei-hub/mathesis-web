@@ -1,0 +1,19 @@
+# Rust build output — regenerable, was the single largest contributor to disk usage (~3GB).
+/target/
+
+# Working/experiment state — scratch runs, intermediate DBs, benchmark logs. Not release data.
+# Real scripts have ended up in scratch/bench/*.ts,*.mjs; relocate those to a tracked
+# tools/bench/ in a later phase instead of gitignoring them piecemeal.
+/scratch/
+
+# Frontend build tooling (web/ has its own .gitignore for node_modules/ and dist/;
+# these two are still missed by it).
+/web/.vite/
+/web/tsconfig.tsbuildinfo
+
+# Claude Code local/runtime state — machine-specific, not project config.
+.claude/settings.local.json
+.claude/scheduled_tasks.lock
+
+# Personal free-form design log, deliberately kept outside version control.
+/アーキテクチャ.txt

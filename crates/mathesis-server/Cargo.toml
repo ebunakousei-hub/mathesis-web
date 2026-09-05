@@ -1,0 +1,9 @@
+[package]
+name = "mathesis-server"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+tiny_http = "0.12"
+rust-embed = "8"
+flate2 = "1"

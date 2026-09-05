@@ -1,0 +1,26 @@
+[package]
+name = "mathesis-taxonomy"
+version.workspace = true
+edition.workspace = true
+
+[[bin]]
+name = "mathesis-taxonomy"
+path = "src/main.rs"
+
+[dependencies]
+mathesis-msc = { path = "../mathesis-msc" }
+mathesis-ingest = { path = "../mathesis-ingest" }
+rusqlite = { version = "0.31", features = ["bundled"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+anyhow = "1"
+# Ollamaのローカルembedding APIはhttp://localhost なのでTLSは不要
+# （mathesis-ingestのようにrustlsを引き込む必要がない）。
+ureq = "2"
+
+[dev-dependencies]
+criterion = { version = "0.5", features = ["html_reports"] }
+
+[[bench]]
+name = "main"
+harness = false

@@ -22,6 +22,22 @@ use std::collections::HashMap;
 pub const ADAPTER_NAME: &str = "mathesis-provenance-legacy-adapter";
 pub const ADAPTER_VERSION: &str = env!("CARGO_PKG_VERSION");
 
+/// `legacy_ref`の組み立て方。`reconcile.rs`（既存のweb向けexportに載っている
+/// 各行が、この増分で作ったどのassertionに対応するかを引く側）もここを再利用する
+/// ——2箇所で書式がずれると引けなくなるため、必ずこの関数群だけを使う。
+pub fn judgment_dependency_legacy_ref(from: i64, to: i64) -> String {
+    format!("judgment_dependency:{from}:{to}")
+}
+pub fn paper_citation_legacy_ref(from: i64, to: i64) -> String {
+    format!("paper_citation:{from}:{to}")
+}
+pub fn morphism_legacy_ref(id: i64) -> String {
+    format!("morphism:{id}")
+}
+pub fn concept_relation_legacy_ref(subject: &str, object: &str, kind: TaxRelationKind) -> String {
+    format!("concept_relation:{subject}|{object}|{}", tax_kind_str(kind))
+}
+
 #[derive(Debug, Default, Clone, Copy)]
 pub struct ImportStats {
     pub dependencies_imported: usize,
@@ -99,7 +115,7 @@ pub fn import_graph(
     // ではない——`docs/DATA_DICTIONARY.md`「Resolved decisions #3」参照。
     for j in graph.list_judgments()? {
         for dep in graph.dependencies_of(j.id)? {
-            let legacy_ref = format!("judgment_dependency:{}:{}", j.id.0, dep.0);
+            let legacy_ref = judgment_dependency_legacy_ref(j.id.0, dep.0);
             if prov.get_assertion_by_legacy_ref(release, &legacy_ref)?.is_some() {
                 stats.dependencies_skipped_existing += 1;
                 continue;
@@ -138,7 +154,7 @@ pub fn import_graph(
     let arxiv_by_paper_id: HashMap<i64, String> = papers.iter().map(|p| (p.id.0, p.arxiv_id.clone())).collect();
     for p in &papers {
         for target in graph.citations_of(p.id)? {
-            let legacy_ref = format!("paper_citation:{}:{}", p.id.0, target.0);
+            let legacy_ref = paper_citation_legacy_ref(p.id.0, target.0);
             if prov.get_assertion_by_legacy_ref(release, &legacy_ref)?.is_some() {
                 stats.citations_skipped_existing += 1;
                 continue;
@@ -186,7 +202,7 @@ pub fn import_graph(
     // 無いため、`reviewed`(「説明責任を伴う人間の決定」)の定義を満たせない。
     // 旧`Accepted`という事実そのものは失わず、下の`ReviewDecision`として残す。
     for m in graph.list_morphisms()? {
-        let legacy_ref = format!("morphism:{}", m.id.0);
+        let legacy_ref = morphism_legacy_ref(m.id.0);
         if prov.get_assertion_by_legacy_ref(release, &legacy_ref)?.is_some() {
             stats.morphisms_skipped_existing += 1;
             continue;
@@ -271,8 +287,7 @@ pub fn import_taxonomy_relations(
     let snapshot_source = get_or_insert_snapshot_source(prov, release_tag)?;
 
     for edge in taxonomy.load_relations()? {
-        let kind_str = tax_kind_str(edge.kind);
-        let legacy_ref = format!("concept_relation:{}|{}|{}", edge.subject, edge.object, kind_str);
+        let legacy_ref = concept_relation_legacy_ref(&edge.subject, &edge.object, edge.kind);
         if prov.get_assertion_by_legacy_ref(release, &legacy_ref)?.is_some() {
             stats.relations_skipped_existing += 1;
             continue;
@@ -351,7 +366,7 @@ pub fn import_taxonomy_relations(
     Ok(stats)
 }
 
-fn tax_kind_str(kind: TaxRelationKind) -> &'static str {
+pub fn tax_kind_str(kind: TaxRelationKind) -> &'static str {
     match kind {
         TaxRelationKind::SpecializationOf => "specialization_of",
         TaxRelationKind::EquivalentTo => "equivalent_to",

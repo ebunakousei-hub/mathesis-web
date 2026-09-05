@@ -5,6 +5,7 @@ use anyhow::{Context, Result};
 use mathesis_graph::GraphStore;
 use mathesis_provenance::legacy_adapter::{import_graph, import_taxonomy_relations};
 use mathesis_provenance::model::NewRelease;
+use mathesis_provenance::reconcile::{reconcile_graph, reconcile_taxonomy};
 use mathesis_provenance::{stats, ProvenanceStore};
 use mathesis_taxonomy::store::TaxonomyStore;
 use std::path::PathBuf;
@@ -20,7 +21,13 @@ fn usage() -> ! {
          \x20     ——同じデータベースに同じリリースタグで再実行しても行は増えない。\n\
          \x20 stats --db <path>\n\
          \x20     証拠層DBの集計(assertion数、predicate/epistemic_state別内訳、\n\
-         \x20     evidence行数のヒストグラム、review_decision数)を表示する。"
+         \x20     evidence行数のヒストグラム、review_decision数)を表示する。\n\
+         \x20 reconcile --graph-db <path> --taxonomy-db <path> --provenance-db <path> --release <tag> --out-dir <path>\n\
+         \x20     import-legacy済みの証拠層DBに対し、web/が今表示しているすべての辺\n\
+         \x20     (judgment_dependencies/paper_citations/morphisms/concept_relations)が\n\
+         \x20     assertionへ引けるかを検証し、judgments.provenance.json /\n\
+         \x20     taxonomy.relations.provenance.json を書き出す。既存のexport.rsや\n\
+         \x20     web/には一切触れない——追加のサイドカーファイルのみ。"
     );
     std::process::exit(1);
 }
@@ -38,6 +45,7 @@ fn main() -> Result<()> {
     match args.get(1).map(String::as_str) {
         Some("import-legacy") => run_import_legacy(&args[2..]),
         Some("stats") => run_stats(&args[2..]),
+        Some("reconcile") => run_reconcile(&args[2..]),
         _ => usage(),
     }
 }
@@ -90,5 +98,39 @@ fn run_stats(args: &[String]) -> Result<()> {
     let db = PathBuf::from(require_flag(args, "--db")?);
     let prov = ProvenanceStore::open(&db).with_context(|| format!("{db:?} を開けません"))?;
     stats::compute(&prov)?.print();
+    Ok(())
+}
+
+fn run_reconcile(args: &[String]) -> Result<()> {
+    let graph_db = PathBuf::from(require_flag(args, "--graph-db")?);
+    let taxonomy_db = PathBuf::from(require_flag(args, "--taxonomy-db")?);
+    let provenance_db = PathBuf::from(require_flag(args, "--provenance-db")?);
+    let release_tag = require_flag(args, "--release")?.to_string();
+    let out_dir = PathBuf::from(require_flag(args, "--out-dir")?);
+
+    let graph = GraphStore::open(&graph_db).with_context(|| format!("{graph_db:?} を開けません"))?;
+    let taxonomy = TaxonomyStore::open(&taxonomy_db).with_context(|| format!("{taxonomy_db:?} を開けません"))?;
+    let prov = ProvenanceStore::open(&provenance_db).with_context(|| format!("{provenance_db:?} を開けません"))?;
+
+    let (judgments_export, mut report) = reconcile_graph(&graph, &prov, &release_tag)?;
+    let (relations_export, taxonomy_report) = reconcile_taxonomy(&taxonomy, &prov, &release_tag)?;
+    report.relations_total = taxonomy_report.relations_total;
+    report.relations_traced = taxonomy_report.relations_traced;
+    report.print();
+
+    std::fs::create_dir_all(&out_dir)?;
+    std::fs::write(
+        out_dir.join("judgments.provenance.json"),
+        serde_json::to_string(&judgments_export)?,
+    )?;
+    std::fs::write(
+        out_dir.join("taxonomy.relations.provenance.json"),
+        serde_json::to_string(&relations_export)?,
+    )?;
+    println!("wrote {} and {}", out_dir.join("judgments.provenance.json").display(), out_dir.join("taxonomy.relations.provenance.json").display());
+
+    if !report.is_fully_traced() {
+        anyhow::bail!("reconciliation incomplete — see counts above");
+    }
     Ok(())
 }

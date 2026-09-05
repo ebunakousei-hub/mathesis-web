@@ -230,6 +230,28 @@ export interface ExportedMorphism {
   rationale: string | null;
 }
 
+/**
+ * Phase 1 (ARCHITECTURE_NEXT.md, `mathesis-provenance`)の証拠層への追跡情報。
+ * `judgments.json`/`taxonomy.relations.json`本体には無い追加のサイドカー
+ * ファイルで、既存のexportの形は一切変えていない——`mathesis-provenance
+ * reconcile`が生成し、`RelationAssertion`のidとリリースタグだけを持つ薄い
+ * 索引。存在しなくても（フェッチに失敗しても）既存の画面は今までどおり
+ * 動く前提で、あれば追加のツールチップ情報として使う。
+ */
+export interface JudgmentsProvenanceExport {
+  releaseTag: string;
+  releaseGitCommit: string | null;
+  dependencies: { from: number; to: number; assertionId: number }[];
+  citations: { from: string; to: string; assertionId: number }[];
+  morphisms: { morphismId: number; assertionId: number }[];
+}
+
+export interface RelationsProvenanceExport {
+  releaseTag: string;
+  releaseGitCommit: string | null;
+  relations: { subject: string; object: string; kind: string; assertionId: number }[];
+}
+
 export interface GraphExport {
   /** このJSONが書き出された時刻（UNIX秒）。TaxonomyExportと同型の対応。 */
   generatedAtUnix: number;

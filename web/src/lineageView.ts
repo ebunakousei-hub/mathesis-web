@@ -533,7 +533,13 @@ export class LineageView {
       // レビューを一切行っていないため、現状は全件が"proposed"）。
       const [badgeKey, hintKey] = MORPHISM_STATUS_KEYS[m.status] ?? MORPHISM_STATUS_KEYS.proposed;
       const statusBadge = `<span class="lin-chip-status lin-chip-status-${escapeHtml(m.status)}" title="${escapeHtml(t(hintKey))}">${escapeHtml(t(badgeKey))}</span>`;
-      const rationale = m.rationale ? `${t(hintKey)} — ${t("morphismRationaleLabel")}: ${m.rationale}` : t(hintKey);
+      let rationale = m.rationale ? `${t(hintKey)} — ${t("morphismRationaleLabel")}: ${m.rationale}` : t(hintKey);
+      // Phase 1 (`mathesis-provenance`)追跡情報。無ければ何も足さない
+      // ——既存の見た目・挙動は変わらない。
+      const provenance = this.graph.morphismProvenance?.get(m.id);
+      if (provenance) {
+        rationale += ` · Provenance: assertion #${provenance.assertionId} (release ${provenance.releaseTag})`;
+      }
       chip.title = rationale;
       chip.innerHTML = `<span class="lin-chip-rel">${escapeHtml(t(RELATION_LABEL_KEY[m.kind]))}</span>${escapeHtml(other?.name ?? `#${otherId}`)}${statusBadge}`;
       chip.onclick = () => {

@@ -10,7 +10,7 @@ import {
   type ProofSearchIndex,
   type ProofSearchResult,
 } from "./proofSearch";
-import type { ExportedJudgment, ExportedMorphism, GraphExport } from "./types";
+import type { ExportedJudgment, ExportedMorphism, GraphExport, JudgmentsProvenanceExport } from "./types";
 import { escapeHtml, formatGeneratedAt, unwrapLeanSymbols } from "./util";
 
 const SEARCH_TOP_K = 25;
@@ -41,6 +41,7 @@ export class ProofGraphExplorer {
   private usedBy = new Map<number, number[]>();
   private byFile = new Map<string, ExportedJudgment[]>();
   private morphismsOf = new Map<number, ExportedMorphism[]>();
+  private morphismProvenance = new Map<number, { assertionId: number; releaseTag: string }>();
   private searchIndex: ProofSearchIndex | null = null;
   /**
    * 系譜ビュー。判断1件を選んだときの主役——依存の鎖を図と概略の両方で出す。
@@ -91,6 +92,19 @@ export class ProofGraphExplorer {
       console.error("Failed to load judgments.json:", err);
       this.loadError = true;
     }
+    // Phase 1 (`mathesis-provenance`)の追跡サイドカー。無くても/失敗しても
+    // 既存の画面は今までどおり動く——単にこのMapが空のままになるだけ。
+    try {
+      const resp = await fetch(`${import.meta.env.BASE_URL}judgments.provenance.json`);
+      if (resp.ok) {
+        const prov = (await resp.json()) as JudgmentsProvenanceExport;
+        for (const m of prov.morphisms) {
+          this.morphismProvenance.set(m.morphismId, { assertionId: m.assertionId, releaseTag: prov.releaseTag });
+        }
+      }
+    } catch (err) {
+      console.warn("judgments.provenance.json not available:", err);
+    }
     this.render();
   }
 
@@ -133,6 +147,10 @@ export class ProofGraphExplorer {
       dependsOn: this.dependsOn,
       usedBy: this.usedBy,
       morphismsOf: this.morphismsOf,
+      // 同じMap参照を渡す——judgments.provenance.jsonの取得は`load()`側で
+      // 並行して進み、この時点ではまだ空のことがある。後から埋まっても
+      // 参照は共有されているので、次のrender()から反映される。
+      morphismProvenance: this.morphismProvenance,
     };
     const chainDepth = computeChainDepths(this.dependsOn, this.judgmentById.keys());
     this.lineageView = new LineageView(this.lineageRoot, graph, chainDepth, {

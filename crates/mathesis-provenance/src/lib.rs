@@ -13,6 +13,7 @@ pub mod error;
 pub mod evidence;
 pub mod legacy_adapter;
 pub mod model;
+pub mod reconcile;
 pub mod release;
 pub mod review;
 pub mod source_record;

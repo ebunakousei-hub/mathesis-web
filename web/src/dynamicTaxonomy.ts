@@ -21,6 +21,7 @@ import type {
   RelatedEdge,
   RelatedEdgesExport,
   RelationsExport,
+  RelationsProvenanceExport,
   SearchIndexColumns,
   TaxonomyShell,
 } from "./types";
@@ -97,6 +98,13 @@ export class DynamicTaxonomyExplorer {
    * 根拠文つきのConfirmed/Groundedしか含まれない（Rust側export.rs参照）。
    */
   private relations: Record<string, TypedRelationView[]> = {};
+  /**
+   * Phase 1 (`mathesis-provenance`)の追跡情報。`"subject|object|kind"`
+   * （元のsubject/object順、`concept_relation_legacy_ref`と同じ形）で引く
+   * ——`TypedRelationView`自体は表示用に向きを畳んであるので、
+   * `lookupRelationProvenance`で両方の向きを試す。
+   */
+  private relationProvenance = new Map<string, { assertionId: number; releaseTag: string }>();
 
   constructor(root: HTMLElement) {
     this.root = root;
@@ -240,6 +248,22 @@ export class DynamicTaxonomyExplorer {
         if (resp.ok) this.relations = expandRelations((await resp.json()) as RelationsExport);
       } catch (err) {
         console.error("Failed to load taxonomy.relations.json:", err);
+      }
+      // Phase 1 (`mathesis-provenance`)の追跡サイドカー。無くても/失敗しても
+      // 既存の画面は今までどおり動く——単にこのMapが空のままになるだけ。
+      try {
+        const resp = await fetch(`${import.meta.env.BASE_URL}taxonomy.relations.provenance.json`);
+        if (resp.ok) {
+          const prov = (await resp.json()) as RelationsProvenanceExport;
+          for (const r of prov.relations) {
+            this.relationProvenance.set(`${r.subject}|${r.object}|${r.kind}`, {
+              assertionId: r.assertionId,
+              releaseTag: prov.releaseTag,
+            });
+          }
+        }
+      } catch (err) {
+        console.warn("taxonomy.relations.provenance.json not available:", err);
       }
       if (this.view.query.trim().length > 0) this.render();
     })();
@@ -526,7 +550,7 @@ export class DynamicTaxonomyExplorer {
 
     const relations = this.relations[h.phrase];
     if (relations !== undefined && relations.length > 0) {
-      row.appendChild(this.renderTypedRelations(relations));
+      row.appendChild(this.renderTypedRelations(h.phrase, relations));
     }
 
     const papers = this.conceptPapers[h.phrase];
@@ -552,7 +576,32 @@ export class DynamicTaxonomyExplorer {
    * 事実として主張できる水準ではないため、読者が引用元の一文を読んで
    * その場で判断できることを、正しさの根拠そのものにしている。
    */
-  private renderTypedRelations(relations: TypedRelationView[]): HTMLElement {
+  /**
+   * `TypedRelationView`は表示用に向きを畳んである（`expandRelations`参照:
+   * 同じ元の行が subject 側からは"broader"、object側からは"narrower"として
+   * 見える）。元の`(subject, object, kind)`——`legacy_ref`の組み立てに要る
+   * 形——を`phrase`（今見ている概念）と`r.relation`から復元して引く。
+   * `equivalent_to`はどちら向きにも同じ形で入るため両方試す。
+   */
+  private lookupRelationProvenance(phrase: string, r: TypedRelationView): { assertionId: number; releaseTag: string } | undefined {
+    if (this.relationProvenance.size === 0) return undefined;
+    const candidates: [string, string, string][] =
+      r.relation === "equivalent"
+        ? [
+            [phrase, r.other, "equivalent_to"],
+            [r.other, phrase, "equivalent_to"],
+          ]
+        : r.relation === "broader"
+          ? [[phrase, r.other, "specialization_of"]]
+          : [[r.other, phrase, "specialization_of"]];
+    for (const [subject, object, kind] of candidates) {
+      const hit = this.relationProvenance.get(`${subject}|${object}|${kind}`);
+      if (hit) return hit;
+    }
+    return undefined;
+  }
+
+  private renderTypedRelations(phrase: string, relations: TypedRelationView[]): HTMLElement {
     const box = document.createElement("div");
     box.className = "dt-search-hit-relations";
 
@@ -589,6 +638,12 @@ export class DynamicTaxonomyExplorer {
       link.textContent = r.evidenceArxivId;
       link.onclick = (ev) => ev.stopPropagation();
       evidence.append(`"${r.evidenceSentence}" — `, link);
+      // Phase 1 (`mathesis-provenance`)追跡情報。無ければ何も足さない
+      // ——既存の見た目・挙動は変わらない。
+      const provenance = this.lookupRelationProvenance(phrase, r);
+      if (provenance) {
+        evidence.append(` · Provenance: assertion #${provenance.assertionId} (release ${provenance.releaseTag})`);
+      }
       item.appendChild(evidence);
 
       list.appendChild(item);

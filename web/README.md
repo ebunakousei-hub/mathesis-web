@@ -822,6 +822,35 @@ relations.json`はどちらも①②の対応で既にexportされていたも�
 今よりさらに桁違いに大きくなり、9.0MB自体の転送/parse時間が
 支配的になった場合は、あらためて実測してから判断する。
 
+## 証拠層への追跡（Phase 1, `mathesis-provenance`、2026-09-05）
+
+ARCHITECTURE_NEXT.md（証拠ベースの再設計）のPhase 1で、`judgments.json`の
+依存関係・射と`taxonomy.relations.json`の型付き関係それぞれに、証拠層
+（`crates/mathesis-provenance`が持つ`RelationAssertion`/`Evidence`/
+`SourceRecord`/`Release`）への追跡情報を足した。既存の2ファイルの形は
+一切変えていない——`mathesis-provenance reconcile`が別途
+`judgments.provenance.json`/`taxonomy.relations.provenance.json`という
+薄いサイドカーを書き出し、フロントエンドがこれを追加でfetchして、既存の
+射チップのツールチップ（`lineageView.ts`）と型付き関係の根拠段落
+（`dynamicTaxonomy.ts`）に「Provenance: assertion #123 (release
+v0-baseline-20260905)」という1行を追記するだけ。サイドカーが無い/
+フェッチに失敗しても、画面は今までどおり動く。
+
+`mathesis-provenance reconcile`は書き出す前に、`judgments.json`/
+`taxonomy.relations.json`が今表示している辺**全件**が証拠層の
+`RelationAssertion`へ実際に引けるかを検証する（2026-09-05時点の
+v0-baseline: 依存関係5,634/5,634・射2,284/2,284・型付き関係1,051/1,051、
+全件一致）。1件でも引けなければ非ゼロ終了する——「表示されている辺は
+必ず由来を示せる」という主張を、生成のたびに機械的に検証する仕組み。
+
+**まだやっていないこと**: 証拠・SourceRecordそのものの閲覧UI（今は
+ツールチップの1行だけ）、レビューワークフロー（`ReviewDecision`は
+レガシーの`Accepted`を保存する器としてのみ機能し、実際のレビュー画面は
+無い）、型付きエンティティカタログ（`subject_ref`/`object_ref`は
+`"kind:id"`形式のタグ付き文字列で、ARCHITECTURE_NEXT.md §5.2の正式な
+カタログではない）。詳細は`docs/DATA_DICTIONARY.md`の「Known
+limitations」参照。
+
 ## 今後の課題（意図的に今回は着手していない）
 
 - 配信時の圧縮（gzip/brotli）については「## ビルド手順」内の

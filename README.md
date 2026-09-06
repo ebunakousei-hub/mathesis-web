@@ -21,8 +21,9 @@ Lean/Coq の証明支援系や arXiv から数学的知識を構造化し、検�
   直接生成するようになった変更、2026-09-05）
 - **Phase 3: 型付きエンティティカタログ**: [docs/P3_STATUS.md](docs/P3_STATUS.md)
   （`subject_ref`/`object_ref`を実在のEntityへ解決する、追加的な最初の増分）
-- **Phase 4計画（未着手）: 次の外部ソースアダプタ**: [docs/P4_PLAN.md](docs/P4_PLAN.md)
-  （OpenAlexアダプタ——ライセンス確認待ちのTheoremGraph/math-graphとは独立に進められる）
+- **Phase 4: OpenAlexアダプタ**: [docs/P4_STATUS.md](docs/P4_STATUS.md)
+  （実データでは種論文138件が互いに引用し合っておらず、引用リンクは0件——
+  実装は正しく検証済み、結果は正直に記録。計画は[docs/P4_PLAN.md](docs/P4_PLAN.md)）
 - **Phase 5計画（未着手）: 信頼度に基づく走査とポリシーのデータ化**:
   [docs/P5_PLAN.md](docs/P5_PLAN.md)
   （`traversalPolicy`のクライアント配線、`EntityId`外部キー移行、

@@ -7,6 +7,8 @@ use mathesis_provenance::assertion_export::export_assertion_details;
 use mathesis_provenance::catalog_adapter::{build_concept_catalog, build_judgment_paper_catalog, catalog_metadata};
 use mathesis_provenance::legacy_adapter::{import_graph, import_taxonomy_relations, ADAPTER_NAME, ADAPTER_VERSION};
 use mathesis_provenance::msc_adapter;
+use mathesis_provenance::openalex_adapter;
+use mathesis_provenance::openalex_fetch::{self, SnapshotEntry};
 use mathesis_provenance::manifest::{
     input_file_hash, CatalogManifest, ManifestCounts, ProvenanceManifest, WebExportCounts, WebExportManifest, SCHEMA_VERSION,
     WEB_EXPORT_SCHEMA_VERSION,
@@ -69,7 +71,17 @@ fn usage() -> ! {
          \x20     自身のEntity Resolution(resolve.rs)が畳んだ表記ゆれをそのまま\n\
          \x20     alias群として使う。subject_ref/object_refの書式はまだ変えない\n\
          \x20     ——`stats`で「今のassertionのうち何件がカタログへ実際に\n\
-         \x20     引けるか」を見られるようにするだけ(docs/P3_STATUS.md参照)。"
+         \x20     引けるか」を見られるようにするだけ(docs/P3_STATUS.md参照)。\n\
+         \x20 fetch-openalex --graph-db <path> --out <snapshot.json>\n\
+         \x20     P4(docs/P4_PLAN.md): mathesis-graphのpapersテーブルにある\n\
+         \x20     論文(種)だけをOpenAlex APIから取得し、スナップショットJSONへ\n\
+         \x20     書き出す——OpenAlex全体をクロールしない、雪だるま式収集。\n\
+         \x20     ライブAPIを叩く唯一のコマンド。\n\
+         \x20 import-openalex --db <path> --release <tag> --snapshot <snapshot.json>\n\
+         \x20     fetch-openalexが書いたスナップショットを証拠層へ写す\n\
+         \x20     (Paper entity + Cites assertion, epistemic_state: observed)。\n\
+         \x20     ネットワークに一切触れない、冪等な純粋インポート。\n\
+         \x20     --releaseはimport-legacyで既に作成済みのタグを指定する。"
     );
     std::process::exit(1);
 }
@@ -93,6 +105,8 @@ fn main() -> Result<()> {
         Some("verify-release") => run_verify_release(&args[2..]),
         Some("build-catalog") => run_build_catalog(&args[2..]),
         Some("import-msc") => run_import_msc(&args[2..]),
+        Some("fetch-openalex") => run_fetch_openalex(&args[2..]),
+        Some("import-openalex") => run_import_openalex(&args[2..]),
         _ => usage(),
     }
 }
@@ -154,6 +168,71 @@ fn run_import_msc(args: &[String]) -> Result<()> {
         stats.concepts_imported, stats.concepts_skipped,
         stats.relations_imported, stats.relations_skipped
     );
+    Ok(())
+}
+
+/// P4: 種論文(mathesis-graphの`papers`)だけをOpenAlexから取得する。
+/// ライブAPIに触れる唯一のコマンド——`import-openalex`はこの出力
+/// (スナップショットJSON)だけを読み、ネットワークには触れない。
+fn run_fetch_openalex(args: &[String]) -> Result<()> {
+    let graph_db = PathBuf::from(require_flag(args, "--graph-db")?);
+    let out_path = PathBuf::from(require_flag(args, "--out")?);
+    let graph = GraphStore::open(&graph_db).with_context(|| format!("{graph_db:?} を開けません"))?;
+
+    let papers = graph.list_papers()?;
+    let now = SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs() as i64).unwrap_or(0);
+    let mut snapshot: Vec<SnapshotEntry> = Vec::new();
+    let mut not_found = 0usize;
+    for (i, p) in papers.iter().enumerate() {
+        if i > 0 {
+            openalex_fetch::courtesy_wait();
+        }
+        match openalex_fetch::fetch_work_by_arxiv_id(&p.arxiv_id, now) {
+            Ok(Some(entry)) => snapshot.push(entry),
+            Ok(None) => not_found += 1,
+            Err(e) => eprintln!("警告: {} の取得に失敗、スキップ: {e}", p.arxiv_id),
+        }
+    }
+    snapshot.sort_by(|a, b| a.arxiv_id.cmp(&b.arxiv_id));
+
+    std::fs::write(&out_path, serde_json::to_string_pretty(&snapshot)?)
+        .with_context(|| format!("{out_path:?} への書き込みに失敗"))?;
+    println!(
+        "fetched {}/{} papers from OpenAlex (not found: {}), wrote {}",
+        snapshot.len(),
+        papers.len(),
+        not_found,
+        out_path.display()
+    );
+    Ok(())
+}
+
+/// P4: `fetch-openalex`が書いたスナップショットを証拠層へ写す。純粋
+/// インポート——ネットワークに一切触れない。
+fn run_import_openalex(args: &[String]) -> Result<()> {
+    let db = PathBuf::from(require_flag(args, "--db")?);
+    let release_tag = require_flag(args, "--release")?.to_string();
+    let snapshot_path = PathBuf::from(require_flag(args, "--snapshot")?);
+
+    let prov = ProvenanceStore::open(&db).with_context(|| format!("{db:?} を開けません"))?;
+    let release = prov
+        .get_release_by_tag(&release_tag)?
+        .with_context(|| format!("release '{release_tag}' not found — run import-legacy first"))?;
+    let snapshot: Vec<SnapshotEntry> = serde_json::from_slice(
+        &std::fs::read(&snapshot_path).with_context(|| format!("{snapshot_path:?} を開けません"))?,
+    )
+    .with_context(|| format!("{snapshot_path:?} のパースに失敗"))?;
+
+    let stats = prov.transaction(|| openalex_adapter::import(&prov, release.id, &snapshot))?;
+    println!(
+        "OpenAlex: papers linked +{} (already linked {}), citations +{} (skip {}), {} references outside the catalog (ignored)",
+        stats.papers_linked,
+        stats.papers_already_linked,
+        stats.citations_imported,
+        stats.citations_skipped_existing,
+        stats.references_outside_catalog,
+    );
+    openalex_adapter::citation_coverage(&prov)?.print();
     Ok(())
 }
 

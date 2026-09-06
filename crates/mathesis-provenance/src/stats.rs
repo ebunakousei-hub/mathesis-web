@@ -3,6 +3,7 @@
 //! そのものから数え直す。
 
 use crate::catalog_adapter::{self, CoverageReport};
+use crate::openalex_adapter::{self, CitationCoverage};
 use crate::store::ProvenanceStore;
 
 #[derive(Debug)]
@@ -21,6 +22,11 @@ pub struct Stats {
     pub entity_count: i64,
     pub entity_count_by_kind: Vec<(String, i64)>,
     pub reference_coverage: CoverageReport,
+    /// P4（`docs/P4_PLAN.md`）。`import-openalex`を一度も実行していない
+    /// DBでも0/Nとして安全に表示できる——エンティティカタログの
+    /// `reference_coverage`と違い「先に`build-catalog`を実行して」という
+    /// 前提ゲートは要らない(cites述語がゼロ件なら単に0/total_papers)。
+    pub citation_coverage: CitationCoverage,
 }
 
 pub fn compute(prov: &ProvenanceStore) -> anyhow::Result<Stats> {
@@ -36,6 +42,7 @@ pub fn compute(prov: &ProvenanceStore) -> anyhow::Result<Stats> {
         entity_count: prov.entity_count()?,
         entity_count_by_kind: prov.entity_count_by_kind()?,
         reference_coverage: catalog_adapter::assertion_reference_coverage(prov)?,
+        citation_coverage: openalex_adapter::citation_coverage(prov)?,
     })
 }
 
@@ -67,5 +74,6 @@ impl Stats {
         } else {
             println!("  (run `build-catalog` to populate the entity catalog and see reference coverage)");
         }
+        self.citation_coverage.print();
     }
 }

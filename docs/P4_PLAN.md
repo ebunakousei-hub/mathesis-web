@@ -1,4 +1,10 @@
-# Phase 4 plan — the next external-source adapter (not yet started)
+# Phase 4 plan — the next external-source adapter (executed — see `docs/P4_STATUS.md`)
+
+> **Update 2026-09-06**: this plan has been executed. See
+> [`docs/P4_STATUS.md`](P4_STATUS.md) for what was actually built and the
+> real (smaller-than-hoped, honestly reported) result of running it
+> against production data. This document is kept as the original plan —
+> its risk framing held up.
 
 > Written 2026-09-06. Status: **plan only, no code changes**. The user is
 > away pending a department reply about licensing/API terms for external

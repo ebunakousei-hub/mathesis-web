@@ -25,6 +25,8 @@ pub mod relation_policy;
 pub mod source_adapter;
 pub mod licensing;
 pub mod msc_adapter;
+pub mod openalex_adapter;
+pub mod openalex_fetch;
 pub mod review;
 pub mod source_record;
 pub mod stats;

@@ -1758,6 +1758,32 @@ table.demo-table code {
   stroke-width: 3;
 }
 
+/* P5, Item 1（docs/P5_PLAN.md）: 既定トラバース対象外の辺を不透明度で弱める。
+   種類ごとの破線パターン（specialization/implication等）とは別軸なので、
+   dasharrayではなくopacityで重ねて区別する。 */
+.lin-edge.is-visible-only {
+  opacity: 0.5;
+}
+.lin-edge.is-visible-only.is-active {
+  opacity: 0.85;
+}
+
+.lin-legend-line.is-visible-only {
+  border-top-color: var(--lin-dep);
+  opacity: 0.5;
+}
+
+.lin-trusted-empty {
+  margin: 10px 0;
+  padding: 10px 12px;
+  border: 1px solid var(--panel-border);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.03);
+  font-size: 12.5px;
+  color: var(--text-dim);
+  line-height: 1.5;
+}
+
 .lin-arrow-head {
   stroke: none;
 }

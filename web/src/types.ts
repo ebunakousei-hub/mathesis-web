@@ -216,6 +216,16 @@ export interface ExportedGraphDependency {
   assertionId: number;
   from: number;
   to: number;
+  /**
+   * P5, Item 1（`docs/P5_PLAN.md`）: `mathesis-provenance web-export`が
+   * `relation_policy::traversal_policy`から直接書き出す、この辺の信頼度
+   * ("excluded"|"visible_only"|"default_traversal"|"formal_only")。
+   * 実データでは`depends_on`は全件`extracted`（Lean elaboratorの正式exportで
+   * はなく名前一致抽出のため`observed`ではない）——よって現状は全件
+   * `visible_only`。0件になることも含めて正直に表示する
+   * （`docs/P5_STATUS.md`参照）。
+   */
+  traversalPolicy: "excluded" | "visible_only" | "default_traversal" | "formal_only";
 }
 
 export interface ExportedGraphPaper {
@@ -248,6 +258,8 @@ export interface ExportedMorphism {
   origin: "manual" | "heuristic";
   status: "proposed" | "accepted" | "rejected";
   rationale: string | null;
+  /** `ExportedGraphDependency.traversalPolicy`と同じ語彙。 */
+  traversalPolicy: "excluded" | "visible_only" | "default_traversal" | "formal_only";
 }
 
 /**
@@ -258,6 +270,14 @@ export interface ExportedMorphism {
 export interface EvidenceDetail {
   evidenceKind: string;
   locator: string | null;
+  /**
+   * `assertion_export.rs::evidence_details_for`が`evidenceKind`(+`locator`
+   * の有無)から導く、位置特定の精度("formal_artifact"|"model_output"|
+   * "reviewer_note"|"approximate_location"|"source_only")。実データ以前は
+   * 型に無かった実在フィールド——`locatorPrecision`が欠けているとRust側と
+   * TS側の形がずれる。
+   */
+  locatorPrecision: string;
   extractorOrModel: string | null;
   metricName: string | null;
   metricValue: number | null;
@@ -285,6 +305,14 @@ export interface AssertionDetail {
   reviewDecisions: ReviewDecisionDetail[];
   eligibleForDefaultTraversal: boolean;
   /**
+   * P5, Item 1（`docs/P5_PLAN.md`）: `eligibleForDefaultTraversal`の元に
+   * なった4値そのもの("excluded"|"visible_only"|"default_traversal"|
+   * "formal_only")——真偽値だけでは「なぜ既定トラバース対象外か」
+   * （却下されたのか、まだ根拠が弱いだけなのか、形式的な文脈でのみ通用する
+   * のか）が伝わらない。
+   */
+  traversalPolicy: "excluded" | "visible_only" | "default_traversal" | "formal_only";
+  /**
    * P3, Increment 1（`docs/P3_STATUS.md`、`mathesis-provenance
    * build-catalog`が作る型付きエンティティカタログ）: `subjectRef`/
    * `objectRef`の人間可読な表示名。カタログ未構築、またはその参照がまだ
@@ -293,6 +321,9 @@ export interface AssertionDetail {
    */
   subjectLabel: string | null;
   objectLabel: string | null;
+  /** ラベルの由来("source_provided"|"canonicalized"|"derived"|"fallback_identifier")。ラベルが`null`なら同じく`null`。 */
+  subjectLabelOrigin: string | null;
+  objectLabelOrigin: string | null;
 }
 
 /**

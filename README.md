@@ -24,10 +24,11 @@ Lean/Coq の証明支援系や arXiv から数学的知識を構造化し、検�
 - **Phase 4: OpenAlexアダプタ**: [docs/P4_STATUS.md](docs/P4_STATUS.md)
   （実データでは種論文138件が互いに引用し合っておらず、引用リンクは0件——
   実装は正しく検証済み、結果は正直に記録。計画は[docs/P4_PLAN.md](docs/P4_PLAN.md)）
-- **Phase 5計画（未着手）: 信頼度に基づく走査とポリシーのデータ化**:
-  [docs/P5_PLAN.md](docs/P5_PLAN.md)
-  （`traversalPolicy`のクライアント配線、`EntityId`外部キー移行、
-  宣言的`RelationSchema`テーブル）
+- **Phase 5, 増分1: `traversalPolicy`のクライアント配線**:
+  [docs/P5_STATUS.md](docs/P5_STATUS.md)
+  （実データでは既定トラバース対象の辺が0件——回帰を避けつつ「信頼できる
+  辺だけ」トグルを追加。項目2(`EntityId`外部キー移行)・3(宣言的
+  `RelationSchema`)は[docs/P5_PLAN.md](docs/P5_PLAN.md)のまま未着手）
 
 このファイルはルート直下のクレート構成の見取り図。各クレートの詳細な
 設計判断は各 `src/lib.rs` 冒頭のドキュメントコメントを参照。

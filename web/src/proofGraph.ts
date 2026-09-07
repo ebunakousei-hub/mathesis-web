@@ -1,5 +1,5 @@
 import { t } from "./i18n";
-import { computeChainDepths, type LineageGraph } from "./lineage";
+import { computeChainDepths, dependencyKey, type LineageGraph } from "./lineage";
 import { LineageView } from "./lineageView";
 import {
   buildProofSearchIndex,
@@ -41,6 +41,8 @@ export class ProofGraphExplorer {
   private usedBy = new Map<number, number[]>();
   private byFile = new Map<string, ExportedJudgment[]>();
   private morphismsOf = new Map<number, ExportedMorphism[]>();
+  /** P5, Item 1（`docs/P5_PLAN.md`）: `LineageGraph.dependencyPolicy`用。 */
+  private dependencyPolicy = new Map<string, ExportedGraphDependency["traversalPolicy"]>();
   private searchIndex: ProofSearchIndex | null = null;
   /**
    * 系譜ビュー。判断1件を選んだときの主役——依存の鎖を図と概略の両方で出す。
@@ -136,6 +138,7 @@ export class ProofGraphExplorer {
       const to = this.usedBy.get(dep.to) ?? [];
       to.push(dep.from);
       this.usedBy.set(dep.to, to);
+      this.dependencyPolicy.set(dependencyKey(dep.from, dep.to), dep.traversalPolicy);
     }
     for (const m of morphisms) {
       const srcList = this.morphismsOf.get(m.src) ?? [];
@@ -158,6 +161,7 @@ export class ProofGraphExplorer {
       dependsOn: this.dependsOn,
       usedBy: this.usedBy,
       morphismsOf: this.morphismsOf,
+      dependencyPolicy: this.dependencyPolicy,
     };
     const chainDepth = computeChainDepths(this.dependsOn, this.judgmentById.keys());
     this.lineageView = new LineageView(this.lineageRoot, graph, chainDepth, {

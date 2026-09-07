@@ -1,7 +1,18 @@
+/**
+ * `div.textContent`→`innerHTML`だけでは`<`/`>`/`&`しかエスケープされず、
+ * `"`はそのまま残る——このコードベースでは呼び出し元の大半が
+ * `title="${escapeHtml(...)}"`のように**属性値**へ埋め込んでいる
+ * （`lineageView.ts`/`dynamicTaxonomy.ts`/`provenancePanel.ts`）ので、
+ * ヒント文字列自体に`"`が含まれると属性がそこで閉じてしまい、以降の
+ * 文字列が余分な属性として壊れたHTMLになる。P5, Item 1の
+ * traversalPolicyヒント文言で実際に踏んだ（`"trusted only"`という
+ * 引用符入りの英語文）——テキストノード用途と属性値用途の両方で安全に
+ * なるよう、ここで`"`/`'`も明示的にエスケープする。
+ */
 export function escapeHtml(s: string): string {
   const div = document.createElement("div");
   div.textContent = s;
-  return div.innerHTML;
+  return div.innerHTML.replaceAll('"', "&quot;").replaceAll("'", "&#39;");
 }
 
 /**

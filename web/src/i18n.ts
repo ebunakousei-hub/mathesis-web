@@ -282,6 +282,11 @@ const DICT = {
   lineageDeeper: { ja: "もう一段深く", en: "One level deeper" },
   lineageShallower: { ja: "一段浅く", en: "One level shallower" },
   lineageToggleMorphisms: { ja: "論理的な関係も描く", en: "Show logical relations" },
+  lineageToggleTrustedOnly: { ja: "既定トラバース対象だけ", en: "Trusted only" },
+  lineageToggleTrustedOnlyHint: {
+    ja: "オンにすると、レビュー済み・形式的に確認済みの辺だけに絞る。今のデータでは0件になることがある——それは不具合ではなく、まだレビューが行われていない事実そのもの。",
+    en: "When on, shows only reviewed or formally-verified edges. This can show zero edges on today's data — that's not a bug, it reflects that no review has happened yet.",
+  },
   lineageReroot: { ja: "ここを起点にして辿り直す", en: "Trace from here" },
   lineageToConcepts: { ja: "関係する概念をarXiv 10万論文から探す →", en: "Find related concepts across 100k arXiv papers →" },
   lineageOutlineTitle: { ja: "証明の概略（背骨をたどる）", en: "Proof outline (following the spine)" },
@@ -304,6 +309,14 @@ const DICT = {
   legendDependency: { ja: "依存（証明が実際に参照した判断）", en: "Dependency (judgment the proof actually cites)" },
   legendSpecialization: { ja: "特殊化・一般化（提案）", en: "Specialization / generalization (proposed)" },
   legendEquivalence: { ja: "同値（提案）", en: "Equivalence (proposed)" },
+  legendVisibleOnly: {
+    ja: "既定トラバース対象外（薄い線） — 表示はされるが、既定の信頼範囲には含まれない",
+    en: "Not default-traversal eligible (faded) — shown, but outside the default trust boundary",
+  },
+  lineageTrustedOnlyEmpty: {
+    ja: "「既定トラバース対象だけ」表示では、この判断まわりに辺が1本もありません。この定理の依存はすべて名前一致による抽出（Lean elaboratorの正式exportではない）で、射はまだ人間によるレビューを1件も受けていないためです——不具合ではありません。上のトグルを切ると通常の表示に戻ります。",
+    en: "With \"trusted only\" on, there are no edges around this judgment. Every dependency here comes from name-matching extraction (not a formal Lean elaborator export), and no morphism has been human-reviewed yet — this is not a bug. Turn the toggle above off to see the normal view.",
+  },
   lineageTabGraph: { ja: "系譜をたどる", en: "Trace the lineage" },
   lineageTabDetail: { ja: "この判断の詳細", en: "Judgment detail" },
 

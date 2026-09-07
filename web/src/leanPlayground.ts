@@ -1,7 +1,7 @@
 import { t } from "./i18n";
-import { computeChainDepths, type LineageGraph } from "./lineage";
+import { computeChainDepths, dependencyKey, type LineageGraph } from "./lineage";
 import { LineageView } from "./lineageView";
-import type { ExportedJudgment, LeanParsedJudgment, LeanParseResult } from "./types";
+import type { ExportedGraphDependency, ExportedJudgment, LeanParsedJudgment, LeanParseResult } from "./types";
 import { escapeHtml, unwrapLeanSymbols } from "./util";
 
 /**
@@ -228,6 +228,12 @@ export class LeanPlaygroundExplorer {
     }
     const dependsOn = new Map<number, number[]>();
     const usedBy = new Map<number, number[]>();
+    // P5, Item 1（`docs/P5_PLAN.md`）: 貼り付けの場でのパースは、静的な
+    // `judgment_dependencies`と同じ「識別子の名前一致」による抽出——
+    // Lean elaboratorの正式exportではないので、既定トラバース対象には
+    // ならない`visible_only`にする（サーバ側の`depends_on`が全件
+    // `extracted`扱いなのと同じ理由、`docs/P5_STATUS.md`参照）。
+    const dependencyPolicy = new Map<string, ExportedGraphDependency["traversalPolicy"]>();
     for (const dep of this.result.dependencies) {
       const from = dependsOn.get(dep.from) ?? [];
       from.push(dep.to);
@@ -235,6 +241,7 @@ export class LeanPlaygroundExplorer {
       const to = usedBy.get(dep.to) ?? [];
       to.push(dep.from);
       usedBy.set(dep.to, to);
+      dependencyPolicy.set(dependencyKey(dep.from, dep.to), "visible_only");
     }
 
     const graph: LineageGraph = {
@@ -242,6 +249,7 @@ export class LeanPlaygroundExplorer {
       dependsOn,
       usedBy,
       morphismsOf: new Map(), // 貼り付けだけでは射（含意・特殊化等）は分からない。
+      dependencyPolicy,
     };
     const chainDepth = computeChainDepths(dependsOn, judgmentById.keys());
 

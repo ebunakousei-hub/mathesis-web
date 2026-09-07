@@ -1,4 +1,4 @@
-import type { ExportedJudgment, ExportedMorphism } from "./types";
+import type { ExportedGraphDependency, ExportedJudgment, ExportedMorphism } from "./types";
 
 /**
  * 「この定理は何に依拠しているのか」を**連鎖として**組み立てる層。
@@ -42,6 +42,13 @@ export interface LineageGraph {
    * `morphisms.json`自体が証拠層から生成されるようになったので不要になった。
    */
   morphismsOf: Map<number, ExportedMorphism[]>;
+  /**
+   * P5, Item 1（`docs/P5_PLAN.md`）: 依存辺`"${from}->${to}"` →
+   * `traversalPolicy`。`dependsOn`自体は判断idの配列のまま（既存の呼び出し
+   * 元を壊さない）にして、信頼度はこの並行マップで引く。射は
+   * `ExportedMorphism.traversalPolicy`を直接持っているので別マップは不要。
+   */
+  dependencyPolicy: Map<string, ExportedGraphDependency["traversalPolicy"]>;
 }
 
 export type LineageRelation =
@@ -71,6 +78,8 @@ export interface LineageEdge {
   onSpine: boolean;
   /** 射のときだけ。ヒューリスティック提案である旨を出すのに使う。 */
   morphism?: ExportedMorphism;
+  /** P5, Item 1: この辺自身の信頼度。`lineageView.ts`が視覚的に区別する。 */
+  traversalPolicy: ExportedGraphDependency["traversalPolicy"];
 }
 
 export interface Lineage {
@@ -96,6 +105,16 @@ export interface LineageOptions {
   maxUsedBy: number;
   /** 射を辺として描くか。 */
   showMorphisms: boolean;
+  /**
+   * P5, Item 1（`docs/P5_PLAN.md`、ARCHITECTURE_NEXT.md §7）: trueなら
+   * `traversalPolicy === "default_traversal"`の辺だけを辿る——既定は
+   * false（今までどおり全辺を表示、回帰を起こさない）。実データでは
+   * まだ`default_traversal`の辺が1本も無い（`depends_on`は全件`extracted`、
+   * 射は全件レビュー未実施の`proposed`）ため、trueにすると意図的に
+   * ほぼ空の系譜になる——`docs/P5_STATUS.md`が実測値として記録している、
+   * バグではなく現在のデータの実情。
+   */
+  trustedOnly: boolean;
 }
 
 export const DEFAULT_LINEAGE_OPTIONS: LineageOptions = {
@@ -103,7 +122,36 @@ export const DEFAULT_LINEAGE_OPTIONS: LineageOptions = {
   maxPerLayer: 6,
   maxUsedBy: 4,
   showMorphisms: true,
+  trustedOnly: false,
 };
+
+/** `LineageGraph.dependencyPolicy`のキー形式。呼び出し元をここに揃える。 */
+export function dependencyKey(from: number, to: number): string {
+  return `${from}->${to}`;
+}
+
+function isTrusted(policy: ExportedGraphDependency["traversalPolicy"]): boolean {
+  return policy === "default_traversal";
+}
+
+/**
+ * `trustedOnly`が立っているときだけ絞り込む依存先一覧。図の組み立て
+ * （`findSpine`/`collectSubgraph`/`buildLineage`）だけでなく、
+ * `lineageView.ts`の判断詳細（「依拠 (N)」チップの列）からも呼ばれる
+ * ——図で隠した辺が詳細欄には残る、という食い違いを避けるため export する。
+ */
+export function traversableChildren(graph: LineageGraph, id: number, opts: LineageOptions): number[] {
+  const children = graph.dependsOn.get(id) ?? [];
+  if (!opts.trustedOnly) return children;
+  return children.filter((c) => isTrusted(graph.dependencyPolicy.get(dependencyKey(id, c)) ?? "visible_only"));
+}
+
+/** 同じく`usedBy`版（辺の向きは`other -> id`なので鍵の引き方が逆になる）。 */
+export function traversableUsedBy(graph: LineageGraph, id: number, opts: LineageOptions): number[] {
+  const users = graph.usedBy.get(id) ?? [];
+  if (!opts.trustedOnly) return users;
+  return users.filter((other) => isTrusted(graph.dependencyPolicy.get(dependencyKey(other, id)) ?? "visible_only"));
+}
 
 /** 配置の寸法。`lineageView.ts` のCSSと合わせてある。 */
 export const NODE_W = 186;
@@ -149,16 +197,20 @@ export function computeChainDepths(dependsOn: Map<number, number[]>, ids: Iterab
  * 同じ深さの子が複数あるときは依存の多いほうを採る（枝葉より、証明の
  * 本筋になっている補題が選ばれやすいように）。
  */
-function findSpine(rootId: number, graph: LineageGraph, chainDepth: Map<number, number>): number[] {
+function findSpine(rootId: number, graph: LineageGraph, chainDepth: Map<number, number>, opts: LineageOptions): number[] {
   const spine = [rootId];
   const seen = new Set([rootId]);
   let current = rootId;
   for (;;) {
-    const children = (graph.dependsOn.get(current) ?? []).filter((c) => !seen.has(c));
+    const children = traversableChildren(graph, current, opts).filter((c) => !seen.has(c));
     if (children.length === 0) break;
     let best = children[0];
     let bestKey = -1;
     for (const c of children) {
+      // `chainDepth`は全辺込みで一度だけ計算した値（下のコメント参照）——
+      // `trustedOnly`時は同点付近の優先順位が全辺基準でわずかにずれうるが、
+      // 候補自体は`traversableChildren`で既に絞られているので選ばれる
+      // ノードそのものは正しい。
       const key = (chainDepth.get(c) ?? 0) * 1000 + (graph.dependsOn.get(c)?.length ?? 0);
       if (key > bestKey) {
         bestKey = key;
@@ -199,7 +251,7 @@ function collectSubgraph(
     const candidates: number[] = [];
     const seen = new Set<number>();
     for (const p of parents) {
-      for (const c of graph.dependsOn.get(p) ?? []) {
+      for (const c of traversableChildren(graph, p, opts)) {
         if (placed.has(c) || seen.has(c)) continue;
         seen.add(c);
         candidates.push(c);
@@ -357,11 +409,11 @@ export function buildLineage(
   const root = graph.judgmentById.get(rootId);
   if (root === undefined) return null;
 
-  const spine = findSpine(rootId, graph, chainDepth);
+  const spine = findSpine(rootId, graph, chainDepth, opts);
   const { layers, hidden, omitted } = collectSubgraph(rootId, graph, spine, opts);
 
   // 根の「上」——この定理を使っている側。深さ -1 の段として先頭に足す。
-  const above = (graph.usedBy.get(rootId) ?? []).slice(0, opts.maxUsedBy);
+  const above = traversableUsedBy(graph, rootId, opts).slice(0, opts.maxUsedBy);
   const allLayers = above.length > 0 ? [above, ...layers] : layers;
   const baseDepth = above.length > 0 ? -1 : 0;
 
@@ -373,20 +425,29 @@ export function buildLineage(
   const edges: LineageEdge[] = [];
   const parentsOf = new Map<number, number[]>();
   const childrenOf = new Map<number, number[]>();
-  const link = (from: number, to: number, relation: LineageRelation, morphism?: ExportedMorphism): void => {
+  const link = (
+    from: number,
+    to: number,
+    relation: LineageRelation,
+    traversalPolicy: ExportedGraphDependency["traversalPolicy"],
+    morphism?: ExportedMorphism,
+  ): void => {
     const onSpine =
       relation === "dependency" &&
       spineSet.has(from) &&
       spineSet.has(to) &&
       spine.indexOf(to) === spine.indexOf(from) + 1;
-    edges.push({ from, to, relation, onSpine, morphism });
+    edges.push({ from, to, relation, onSpine, morphism, traversalPolicy });
     childrenOf.set(from, [...(childrenOf.get(from) ?? []), to]);
     parentsOf.set(to, [...(parentsOf.get(to) ?? []), from]);
   };
 
   for (const id of inGraph) {
     for (const child of graph.dependsOn.get(id) ?? []) {
-      if (inGraph.has(child)) link(id, child, "dependency");
+      if (!inGraph.has(child)) continue;
+      const policy = graph.dependencyPolicy.get(dependencyKey(id, child)) ?? "visible_only";
+      if (opts.trustedOnly && !isTrusted(policy)) continue;
+      link(id, child, "dependency", policy);
     }
   }
 
@@ -397,8 +458,9 @@ export function buildLineage(
         if (seenMorphism.has(m.id)) continue;
         if (!inGraph.has(m.src) || !inGraph.has(m.dst)) continue;
         if (m.src === m.dst) continue;
+        if (opts.trustedOnly && !isTrusted(m.traversalPolicy)) continue;
         seenMorphism.add(m.id);
-        edges.push({ from: m.src, to: m.dst, relation: m.kind, onSpine: false, morphism: m });
+        edges.push({ from: m.src, to: m.dst, relation: m.kind, onSpine: false, morphism: m, traversalPolicy: m.traversalPolicy });
       }
     }
   }
@@ -473,7 +535,7 @@ export interface Outline {
  * 1. 2. 3. と番号を振った文章の列としても出す——数学者が証明を読むときの
  * 自然な形はこちらなので、絵と文章の両方から同じ構造に入れるようにする。
  */
-export function spineOutline(lineage: Lineage, graph: LineageGraph, limit = 12): Outline {
+export function spineOutline(lineage: Lineage, graph: LineageGraph, opts: LineageOptions = DEFAULT_LINEAGE_OPTIONS, limit = 12): Outline {
   const steps: OutlineStep[] = [];
   const spine = lineage.spine;
   for (let i = 0; i < Math.min(limit, spine.length); i += 1) {
@@ -481,7 +543,9 @@ export function spineOutline(lineage: Lineage, graph: LineageGraph, limit = 12):
     const judgment = graph.judgmentById.get(id);
     if (judgment === undefined) continue;
     const nextId = spine[i + 1];
-    const deps = graph.dependsOn.get(id) ?? [];
+    // `trustedOnly`のときは図と同じ辺だけを「横から刺さる補題」として
+    // 数える——図では隠したのに文章では出る、という食い違いを避ける。
+    const deps = traversableChildren(graph, id, opts);
     // 「横から刺さる補題」は、背骨の次の段以外の依存すべて。番号を追って
     // 読んでいる人にとって、この段で追加で要るものはこれ、という意味。
     const side = deps

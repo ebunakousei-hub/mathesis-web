@@ -76,7 +76,21 @@ function renderRef(ref: string, label: string | null): string {
   return label ? `${escapeHtml(label)} <code>${escapeHtml(ref)}</code>` : `<code>${escapeHtml(ref)}</code>`;
 }
 
+/**
+ * P5, Item 1（`docs/P5_PLAN.md`）: `traversalPolicy`の4値それぞれに、
+ * 短い理由書きを添える——`eligibleForDefaultTraversal`という真偽値だけでは
+ * 「却下されたのか、まだ根拠が弱いだけなのか、形式的な文脈限定なのか」が
+ * 伝わらない。
+ */
+const TRAVERSAL_POLICY_LABEL: Record<AssertionDetail["traversalPolicy"], [string, string]> = {
+  default_traversal: ["default-traversal eligible", "Shown by default in the lineage view."],
+  visible_only: ["visible, opt-in only", "Not shown by default — visible only when the lineage view's \"trusted only\" filter is off."],
+  formal_only: ["formal contexts only", "Reviewed, but only eligible for traversal in a formally-scoped context, not the default view."],
+  excluded: ["excluded", "Rejected — never shown, even with the \"trusted only\" filter off."],
+};
+
 function renderDetail(d: AssertionDetail): string {
+  const [policyBadge, policyHint] = TRAVERSAL_POLICY_LABEL[d.traversalPolicy] ?? TRAVERSAL_POLICY_LABEL.visible_only;
   return `
     <form method="dialog" class="prov-dialog-form">
       <div class="prov-dialog-header">
@@ -89,7 +103,7 @@ function renderDetail(d: AssertionDetail): string {
         </div>
         <div class="prov-row"><span class="prov-label">epistemic state</span>
           <span class="prov-badge">${escapeHtml(d.epistemicState)}</span>
-          ${d.eligibleForDefaultTraversal ? `<span class="prov-badge prov-badge-trusted">default-traversal eligible</span>` : `<span class="prov-badge prov-badge-untrusted">opt-in only</span>`}
+          <span class="prov-badge ${d.eligibleForDefaultTraversal ? "prov-badge-trusted" : "prov-badge-untrusted"}" title="${escapeHtml(policyHint)}">${escapeHtml(policyBadge)}</span>
         </div>
         ${d.score !== null ? `<div class="prov-row"><span class="prov-label">score</span>${d.score.toFixed(4)}</div>` : ""}
         <div class="prov-row"><span class="prov-label">release</span>${escapeHtml(d.releaseTag)}</div>

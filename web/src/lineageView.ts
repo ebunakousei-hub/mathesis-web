@@ -5,6 +5,8 @@ import {
   NODE_H,
   NODE_W,
   spineOutline,
+  traversableChildren,
+  traversableUsedBy,
   type Lineage,
   type LineageEdge,
   type LineageGraph,
@@ -113,6 +115,9 @@ export class LineageView {
     wrap.className = "lin";
     wrap.appendChild(this.renderHead(lineage));
     wrap.appendChild(this.renderLegend());
+    if (this.opts.trustedOnly && lineage.edges.length === 0) {
+      wrap.appendChild(this.renderTrustedOnlyEmptyNotice());
+    }
     wrap.appendChild(this.renderCanvas(lineage));
     wrap.appendChild(this.renderOutline(lineage));
     if (this.selected !== null) {
@@ -166,6 +171,23 @@ export class LineageView {
     };
     controls.appendChild(morphToggle);
 
+    // P5, Item 1（`docs/P5_PLAN.md`）: 既定は全辺表示（今までどおり、回帰なし）
+    // ——オンにすると`traversalPolicy === "default_traversal"`の辺だけに絞る。
+    // 実データでは今のところ0件になる（`docs/P5_STATUS.md`）——これは
+    // バグではなく、`depends_on`が全件`extracted`・射が全件レビュー未実施
+    // という現在のデータの実情そのもの。オンにした結果が0件でも黙らず、
+    // `renderCanvas`が理由を添えて説明する。
+    const trustToggle = document.createElement("button");
+    trustToggle.type = "button";
+    trustToggle.className = `lin-ctl ${this.opts.trustedOnly ? "active" : ""}`;
+    trustToggle.textContent = t("lineageToggleTrustedOnly");
+    trustToggle.title = t("lineageToggleTrustedOnlyHint");
+    trustToggle.onclick = () => {
+      this.opts = { ...this.opts, trustedOnly: !this.opts.trustedOnly };
+      this.render();
+    };
+    controls.appendChild(trustToggle);
+
     head.appendChild(controls);
     return head;
   }
@@ -183,7 +205,23 @@ export class LineageView {
     item("is-dependency", t("legendDependency"));
     item("is-specialization", t("legendSpecialization"));
     item("is-equivalence", t("legendEquivalence"));
+    if (!this.opts.trustedOnly) item("is-visible-only", t("legendVisibleOnly"));
     return legend;
+  }
+
+  /**
+   * `trustedOnly`表示で辺が1本も残らなかったときの説明。空白の図だけを
+   * 見せると壊れているように見える——実際には
+   * `depends_on`が全件`extracted`（Lean elaboratorの正式exportではなく
+   * 名前一致抽出）、射が全件レビュー未実施の`proposed`という、現在の
+   * データが実際にそうであるという事実を正直に伝える
+   * （`docs/P5_STATUS.md`参照、捏造も誤魔化しもしない）。
+   */
+  private renderTrustedOnlyEmptyNotice(): HTMLElement {
+    const notice = document.createElement("p");
+    notice.className = "lin-trusted-empty";
+    notice.textContent = t("lineageTrustedOnlyEmpty");
+    return notice;
   }
 
   // ── 図 ────────────────────────────────────────────────────────
@@ -284,6 +322,12 @@ export class LineageView {
         "lin-edge",
         `is-${edge.relation}`,
         edge.onSpine ? "is-spine" : "",
+        // P5, Item 1: 既定トラバース対象外の辺を視覚的に弱める
+        // （ARCHITECTURE_NEXT.md §7の表——ここでは「破線」は既に述語の種類
+        // （specialization/implication）に使っているので、信頼度は不透明度で
+        // 分ける）。`trustedOnly`表示中は残っている辺が全部このクラスに
+        // なり無意味なので付けない。
+        !this.opts.trustedOnly && edge.traversalPolicy !== "default_traversal" ? "is-visible-only" : "",
         this.touches(edge) ? "is-active" : "",
         this.selected !== null && !this.touches(edge) ? "is-dimmed" : "",
       ]
@@ -350,7 +394,7 @@ export class LineageView {
     hint.textContent = t("lineageOutlineHint");
     box.appendChild(hint);
 
-    const outline = spineOutline(lineage, this.graph);
+    const outline = spineOutline(lineage, this.graph, this.opts);
     const list = document.createElement("ol");
     list.className = "lin-steps";
 
@@ -468,8 +512,8 @@ export class LineageView {
     `;
     box.appendChild(meta);
 
-    box.appendChild(this.renderRelationRow(t("dependsOnLabel"), this.graph.dependsOn.get(id) ?? []));
-    box.appendChild(this.renderRelationRow(t("usedByLabel"), this.graph.usedBy.get(id) ?? []));
+    box.appendChild(this.renderRelationRow(t("dependsOnLabel"), traversableChildren(this.graph, id, this.opts)));
+    box.appendChild(this.renderRelationRow(t("usedByLabel"), traversableUsedBy(this.graph, id, this.opts)));
     box.appendChild(this.renderMorphisms(id));
 
     const toConcepts = document.createElement("button");
@@ -512,7 +556,9 @@ export class LineageView {
   private renderMorphisms(id: number): HTMLElement {
     const row = document.createElement("div");
     row.className = "lin-detail-row";
-    const morphisms = this.graph.morphismsOf.get(id) ?? [];
+    const all = this.graph.morphismsOf.get(id) ?? [];
+    // 図と同じ絞り込み（`trustedOnly`時は`default_traversal`だけ）。
+    const morphisms = this.opts.trustedOnly ? all.filter((m) => m.traversalPolicy === "default_traversal") : all;
     row.innerHTML = `<span class="lin-detail-label">${escapeHtml(t("morphismsLabel"))} (${morphisms.length})</span>`;
     if (morphisms.length === 0) {
       const empty = document.createElement("span");

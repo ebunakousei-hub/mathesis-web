@@ -23,6 +23,7 @@
 
 use crate::assertion_export::{evidence_details_for, review_decision_details_for};
 use crate::model::{EpistemicState, RelationAssertion, RelationKind};
+use crate::relation_policy::traversal_policy;
 use crate::store::ProvenanceStore;
 use serde::Serialize;
 
@@ -42,6 +43,13 @@ pub struct DependencyEdge {
     pub assertion_id: i64,
     pub from: i64,
     pub to: i64,
+    /// P5, Item 1（`docs/P5_PLAN.md`）: `relation_policy::traversal_policy`の
+    /// 文字列表現をそのまま辺へ持たせる——クライアントが既定トラバース対象を
+    /// 判断するのに`assertions.json`（4MB超）をまるごと読み込まずに済む。
+    /// 実データでは今のところ全件`visible_only`（`depends_on`は`observed`
+    /// ではなく`extracted`——Lean elaboratorの正式exportではなく名前一致の
+    /// 抽出のため、`docs/P5_STATUS.md`参照）。
+    pub traversal_policy: String,
 }
 
 /// `mathesis-graph::export::ExportedMorphism`と同じ4フィールド
@@ -61,6 +69,8 @@ pub struct MorphismEdge {
     pub origin: String,
     pub status: String,
     pub rationale: Option<String>,
+    /// `DependencyEdge::traversal_policy`と同じ理由・同じ値の語彙。
+    pub traversal_policy: String,
 }
 
 /// `mathesis-taxonomy::export::RelationsExport`の1行相当。`confidence`は
@@ -109,7 +119,12 @@ pub fn build_dependency_edges(assertions: &[RelationAssertion]) -> Vec<Dependenc
         .filter_map(|a| {
             let from = strip_prefix_id("judgment:", &a.subject_ref)?;
             let to = strip_prefix_id("judgment:", &a.object_ref)?;
-            Some(DependencyEdge { assertion_id: a.id.0, from, to })
+            Some(DependencyEdge {
+                assertion_id: a.id.0,
+                from,
+                to,
+                traversal_policy: traversal_policy(a.predicate, a.epistemic_state).as_str().to_string(),
+            })
         })
         .collect()
 }
@@ -154,6 +169,7 @@ pub fn build_morphism_edges(prov: &ProvenanceStore, assertions: &[RelationAssert
             origin: origin.to_string(),
             status: status.to_string(),
             rationale,
+            traversal_policy: traversal_policy(a.predicate, a.epistemic_state).as_str().to_string(),
         });
     }
     Ok(out)
@@ -291,6 +307,51 @@ mod tests {
         assert_eq!(deps[0].from, 5);
         assert_eq!(deps[0].to, 2);
         assert_eq!(deps[0].assertion_id, a.0);
+    }
+
+    /// P5, Item 1（`docs/P5_PLAN.md`）: real dataの`depends_on`は今のところ
+    /// 全件`extracted`（`observed`ではない——`docs/DATA_DICTIONARY.md`の決定）
+    /// なので`visible_only`になるべき。`observed`に上がれば`default_traversal`
+    /// に変わることも同じテストで確認する——クライアントが読む語彙が
+    /// `relation_policy::traversal_policy`とズレないことの契約テスト。
+    #[test]
+    fn dependency_edge_carries_the_traversal_policy_computed_from_its_epistemic_state() {
+        let (prov, release, source) = setup();
+        let extracted = prov
+            .insert_assertion(&NewRelationAssertion {
+                subject_ref: "judgment:1".into(),
+                predicate: RelationKind::DependsOn,
+                object_ref: "judgment:2".into(),
+                epistemic_state: EpistemicState::Extracted,
+                score: None,
+                policy_version: None,
+                created_by_run_id: None,
+                supersedes_id: None,
+                release_id: release,
+                legacy_ref: Some("d1".into()),
+            })
+            .unwrap();
+        let observed = prov
+            .insert_assertion(&NewRelationAssertion {
+                subject_ref: "judgment:3".into(),
+                predicate: RelationKind::DependsOn,
+                object_ref: "judgment:4".into(),
+                epistemic_state: EpistemicState::Observed,
+                score: None,
+                policy_version: None,
+                created_by_run_id: None,
+                supersedes_id: None,
+                release_id: release,
+                legacy_ref: Some("d2".into()),
+            })
+            .unwrap();
+        let _ = source;
+
+        let assertions = prov.list_assertions_for_release(release).unwrap();
+        let deps = build_dependency_edges(&assertions);
+        let by_id = |id: i64| deps.iter().find(|d| d.assertion_id == id).unwrap();
+        assert_eq!(by_id(extracted.0).traversal_policy, "visible_only");
+        assert_eq!(by_id(observed.0).traversal_policy, "default_traversal");
     }
 
     fn insert_morphism(

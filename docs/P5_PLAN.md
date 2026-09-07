@@ -1,4 +1,10 @@
-# Phase 5 plan — trust-aware traversal and policy-as-data (not yet started)
+# Phase 5 plan — trust-aware traversal and policy-as-data
+
+> **Update 2026-09-07**: Item 1 (below) has been executed — see
+> [`docs/P5_STATUS.md`](P5_STATUS.md) for what was built, a real finding
+> this plan did not anticipate (today's data has zero edges at the
+> trusted tier), and the resulting design decision. Items 2 and 3 remain
+> not started.
 
 > Written 2026-09-06. Status: **plan only, no code changes**. Scoped
 > alongside `docs/P4_PLAN.md` while the user is away pending a department

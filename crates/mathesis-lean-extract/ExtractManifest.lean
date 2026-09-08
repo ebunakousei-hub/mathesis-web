@@ -45,6 +45,19 @@ def projectLabel : String := "DeGiorgi"
 def entryModuleName : String := "DeGiorgi.BallExtension.ApproximationControl"
 def leanToolchainStr : String := "leanprover/lean4:v4.29.0-rc6"
 def mathlibRevStr : String := "5c8398df528176d9c87ccd9226ba8f7c8852d59c"
+/-- P6.2（`docs/P6_2_STATUS.md`）: DeGiorgi wraps every file's declarations in
+    a `namespace DeGiorgi ... end` matching its directory layout, so a
+    declaration's own qualified name and its module path share the same
+    prefix — this is what let the P6.1 module-attribution-leak fix
+    (`ContDiffBump.mk.congr_simp`) require *both* module and name to match.
+    Mathlib does not follow this convention: files under `Mathlib/X/Y.lean`
+    are attributed to module `Mathlib.X.Y`, but their declarations typically
+    live in a namespace with no `Mathlib.` prefix at all (`CategoryTheory.
+    Category`, not `Mathlib.CategoryTheory.Category`). Requiring a name-prefix
+    match against a Mathlib-slice project namespace found zero declarations
+    — not a bug, a real convention difference. Keep this `true` for DeGiorgi
+    (regression-tested); the P6.2 pilot scripts set it `false`. -/
+def requireNamePrefixMatch : Bool := true
 
 def isProjectModule (env : Environment) (projectNs : Name) (n : Name) : Bool :=
   match env.getModuleIdxFor? n with
@@ -158,7 +171,8 @@ def declDeps (env : Environment) (projectNs : Name) (info : ConstantInfo) : Core
     -- 名前自体も`DeGiorgi`で始まる)。名前の接頭辞と生成物フィルタの両方を
     -- 満たすものだけを対象にする。
     let isGenerated ← isGeneratedOrPrivate env name
-    if isProjectModule env projectNamespace name && projectNamespace.isPrefixOf name && !isGenerated then
+    let namePrefixOk := !requireNamePrefixMatch || projectNamespace.isPrefixOf name
+    if isProjectModule env projectNamespace name && namePrefixOk && !isGenerated then
       total := total + 1
       let dd ← declDeps env projectNamespace info
       let declJson := Json.mkObj [

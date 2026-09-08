@@ -133,16 +133,23 @@ impl CoverageReport {
     }
 }
 
-/// 今のDBにある全assertionの`subject_ref`/`object_ref`が、カタログへ実際に
-/// 引けるかを集計する。**リリースゲートではない**——`web-export`/`verify-release`
-/// はまだこれを見ない（`docs/P3_STATUS.md`「まだやっていないこと」参照）。
-/// `stats`が参考情報として表示するための、素朴な集計。
+/// 今のDBにある全assertionの`subject_entity_id`/`object_entity_id`(FK)が
+/// 埋まっているかを集計する。`stats`が参考情報として表示するための素朴な
+/// 集計であって、それ自体はリリースゲートではない（`entity_endpoint_drift`
+/// 検査は`verify.rs`が別途担う）。
+///
+/// P5, Item 2 step 4（`docs/P5_PLAN.md`）: 以前はここで`subject_ref`文字列を
+/// 都度`resolve_entity_ref`し直していた——`insert_assertion`/
+/// `backfill_assertion_entity_ids`が今やFK自体を真実の記録として持つので、
+/// 209,416件ぶん引き直すのではなくFK列を直接見る（速く、かつ「今この瞬間
+/// 解決できるか」ではなく「カタログの記録として解決済みか」を測る、より
+/// 本来の意味に近い集計になる）。
 pub fn assertion_reference_coverage(prov: &ProvenanceStore) -> anyhow::Result<CoverageReport> {
     let mut report = CoverageReport::default();
     for a in prov.list_assertions()? {
-        for r in [&a.subject_ref, &a.object_ref] {
+        for (r, entity_id) in [(&a.subject_ref, a.subject_entity_id), (&a.object_ref, a.object_entity_id)] {
             report.total_refs += 1;
-            if prov.resolve_entity_ref(r)?.is_some() {
+            if entity_id.is_some() {
                 report.resolved_refs += 1;
             } else if report.unresolved_examples.len() < 10 {
                 report.unresolved_examples.push(r.clone());

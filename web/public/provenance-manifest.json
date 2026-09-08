@@ -5,6 +5,7 @@
   "sourceDatabaseSchema": 1,
   "adapterName": "mathesis-provenance-legacy-adapter",
   "adapterVersion": "0.1.0",
+  "sourceMappingPolicyVersion": "mathesis-source-mapping-v1",
   "inputFiles": [
     {
       "path": "scratch/judgments.db",
@@ -15,11 +16,20 @@
       "sha256": "f6e11dd310ff21b65de87cba2adc3edf6fb5cf56c4732a69b139904d63a0a6ac"
     }
   ],
-  "generatedAtUnix": 1788613626,
+  "generatedAtUnix": 1788829815,
   "counts": {
     "dependencies": 5634,
     "citations": 0,
     "morphisms": 2284,
     "relations": 1051
+  },
+  "catalog": {
+    "schemaVersion": 1,
+    "buildVersion": "mathesis-provenance::catalog-v1",
+    "entityResolutionVersion": "mathesis-taxonomy::resolve-v1",
+    "graphInputSha256": "a23a538d7e4fbf7b062efe04e2dd4f1360d6fe07b850d1a421ccc908a781abb8",
+    "taxonomyInputSha256": "f6e11dd310ff21b65de87cba2adc3edf6fb5cf56c4732a69b139904d63a0a6ac",
+    "entityCount": 98468,
+    "aliasCount": 117795
   }
 }

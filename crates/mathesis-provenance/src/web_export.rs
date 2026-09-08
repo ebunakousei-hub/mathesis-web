@@ -29,14 +29,6 @@ use serde::Serialize;
 
 pub const WEB_EXPORT_VERSION: &str = env!("CARGO_PKG_VERSION");
 
-fn strip_prefix_id(prefix: &str, r: &str) -> Option<i64> {
-    r.strip_prefix(prefix)?.parse().ok()
-}
-
-fn strip_prefix_str<'a>(prefix: &str, r: &'a str) -> Option<&'a str> {
-    r.strip_prefix(prefix)
-}
-
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DependencyEdge {
@@ -112,21 +104,32 @@ fn relation_kind_str(k: RelationKind) -> Option<&'static str> {
 /// `judgment_dependencies` -> depends_on。構造的な機械的事実そのままで、
 /// 状態は常に`extracted`（`legacy_adapter::import_graph`参照）——ここに
 /// Evidence由来の追加解釈は要らない。
-pub fn build_dependency_edges(assertions: &[RelationAssertion]) -> Vec<DependencyEdge> {
-    assertions
-        .iter()
-        .filter(|a| a.predicate == RelationKind::DependsOn)
-        .filter_map(|a| {
-            let from = strip_prefix_id("judgment:", &a.subject_ref)?;
-            let to = strip_prefix_id("judgment:", &a.object_ref)?;
-            Some(DependencyEdge {
-                assertion_id: a.id.0,
-                from,
-                to,
-                traversal_policy: traversal_policy(a.predicate, a.epistemic_state).as_str().to_string(),
-            })
-        })
-        .collect()
+///
+/// P5, Item 2 step 4（`docs/P5_PLAN.md`）: `from`/`to`は`subject_ref`の
+/// 文字列プレフィックスを剥がすのではなく、`subject_entity_id`(FK)を
+/// `judgment_id_for_entity`で逆引きして得る——FKが無い(=カタログ未解決)
+/// assertionは出さない。`verify-release`が通ったDBでは
+/// `subject_entity_id`と`subject_ref`の解決結果は一致することが保証
+/// 済み（`entity_endpoint_drift`検査）なので実データでの結果は変わらないが、
+/// 「何が出典か」の主従が入れ替わる——文字列は表示用、FKが真実。
+pub fn build_dependency_edges(prov: &ProvenanceStore, assertions: &[RelationAssertion]) -> anyhow::Result<Vec<DependencyEdge>> {
+    let mut out = Vec::new();
+    for a in assertions {
+        if a.predicate != RelationKind::DependsOn {
+            continue;
+        }
+        let Some(subject_entity_id) = a.subject_entity_id else { continue };
+        let Some(object_entity_id) = a.object_entity_id else { continue };
+        let Some(from) = prov.judgment_id_for_entity(subject_entity_id)? else { continue };
+        let Some(to) = prov.judgment_id_for_entity(object_entity_id)? else { continue };
+        out.push(DependencyEdge {
+            assertion_id: a.id.0,
+            from,
+            to,
+            traversal_policy: traversal_policy(a.predicate, a.epistemic_state).as_str().to_string(),
+        });
+    }
+    Ok(out)
 }
 
 /// 射（implies/specializes/generalizes/equivalent_to、judgment同士）。
@@ -140,11 +143,11 @@ pub fn build_morphism_edges(prov: &ProvenanceStore, assertions: &[RelationAssert
     let mut out = Vec::new();
     for a in assertions {
         let Some(kind) = morphism_kind_str(a.predicate) else { continue };
-        let (Some(src), Some(dst)) =
-            (strip_prefix_id("judgment:", &a.subject_ref), strip_prefix_id("judgment:", &a.object_ref))
-        else {
-            continue;
-        };
+        // `build_dependency_edges`と同じ理由でFK経由に切り替える。
+        let Some(subject_entity_id) = a.subject_entity_id else { continue };
+        let Some(object_entity_id) = a.object_entity_id else { continue };
+        let Some(src) = prov.judgment_id_for_entity(subject_entity_id)? else { continue };
+        let Some(dst) = prov.judgment_id_for_entity(object_entity_id)? else { continue };
         let evidence = evidence_details_for(prov, a.id)?;
         let review_decisions = review_decision_details_for(prov, a.id)?;
         let origin_evidence =
@@ -180,19 +183,33 @@ pub fn build_morphism_edges(prov: &ProvenanceStore, assertions: &[RelationAssert
 /// Proposed）は出さない——`mathesis-taxonomy::export::RelationsExport`と
 /// 同じ「読者が自分の目で確かめられる根拠がある行だけを見せる」方針
 /// （実測精度約50%、`relations.rs`冒頭コメント参照）。
+///
+/// P5, Item 2 step 4: `subject`/`object`は`subject_ref`の文字列（表記ゆれの
+/// ままのことがある）ではなく、`subject_entity_id`が指すエンティティの
+/// `display_label`(=Entity Resolutionが選んだ代表表記)を出す。実データで
+/// 突き合わせて確認した実例（1051件中3件）: `subject_ref`が
+/// "pull back"/"one dimensional"/"dg module"という別表記のまま記録されて
+/// いたのに対し、代表表記は"pull-back"/"one-dimensional"/"dg-modules"——
+/// `web/src/dynamicTaxonomy.ts`の概念詳細は検索索引の代表表記（`h.phrase`）
+/// をキーに`relations.json`を引く(`expandRelations`)ため、旧来のasIs出力
+/// ではこの3件が**該当の概念ページ上で一度も表示されていなかった**
+/// (別表記のキーに埋もれて孤立していた) ——これは仕様ではなく実バグで、
+/// この切り替えが直す。
 pub fn build_relation_edges(prov: &ProvenanceStore, assertions: &[RelationAssertion]) -> anyhow::Result<Vec<RelationEdge>> {
     let mut out = Vec::new();
     for a in assertions {
         let Some(kind) = relation_kind_str(a.predicate) else { continue };
-        let Some(subject) = strip_prefix_str("concept:", &a.subject_ref) else { continue };
-        let Some(object) = strip_prefix_str("concept:", &a.object_ref) else { continue };
+        let Some(subject_entity_id) = a.subject_entity_id else { continue };
+        let Some(object_entity_id) = a.object_entity_id else { continue };
+        let Some(subject) = prov.try_get_entity(subject_entity_id)?.map(|e| e.display_label) else { continue };
+        let Some(object) = prov.try_get_entity(object_entity_id)?.map(|e| e.display_label) else { continue };
         let evidence = evidence_details_for(prov, a.id)?;
         let Some(source_span) = evidence.iter().find(|e| e.evidence_kind == "source_span") else { continue };
         let model_output = evidence.iter().find(|e| e.evidence_kind == "model_output");
         out.push(RelationEdge {
             assertion_id: a.id.0,
-            subject: subject.to_string(),
-            object: object.to_string(),
+            subject,
+            object,
             kind: kind.to_string(),
             status: if model_output.is_some() { "confirmed".to_string() } else { "grounded".to_string() },
             confidence: model_output.and_then(|e| e.metric_value),
@@ -225,10 +242,23 @@ pub struct WebExport {
 
 /// このリリースの`ProvenanceStore`**だけ**を入口に、Web版が今表示している
 /// 3種の辺すべてを組み立てる。
+///
+/// P5, Item 2 step 4以降、3種すべて`subject_entity_id`/`object_entity_id`
+/// (FK)を出典に使う——カタログが空のDB(`build-catalog`未実行)では
+/// どのassertionもFKを持たないため、3種とも0件になる。これを気づかれない
+/// まま空の`web-export`を書き出してしまわないよう、ここで早期に失敗する
+/// （`build-catalog`が今や`web-export`の事実上の前提工程になったことを、
+/// 黙って壊れた出力を出すのではなく明示的なエラーとして伝える）。
 pub fn build_web_export(prov: &ProvenanceStore, release: crate::model::ReleaseId) -> anyhow::Result<WebExport> {
+    if prov.entity_count()? == 0 {
+        anyhow::bail!(
+            "no entity catalog present (entity_count == 0) — run `mathesis-provenance build-catalog` \
+             before `web-export`; edges now resolve through subject_entity_id/object_entity_id, not string parsing"
+        );
+    }
     let assertions = prov.list_assertions_for_release(release)?;
     Ok(WebExport {
-        dependencies: build_dependency_edges(&assertions),
+        dependencies: build_dependency_edges(prov, &assertions)?,
         morphisms: build_morphism_edges(prov, &assertions)?,
         relations: build_relation_edges(prov, &assertions)?,
     })
@@ -241,6 +271,29 @@ mod tests {
         EvidenceKind, NewEvidence, NewRelationAssertion, NewRelease, NewReviewDecision, NewSourceRecord, ReviewOutcome,
     };
     use crate::store::ProvenanceStore;
+
+    use crate::model::{EntityKind, NewEntity};
+
+    /// P5, Item 2 step 4: `build_dependency_edges`/`build_morphism_edges`は
+    /// 今や`subject_entity_id`/`object_entity_id`(FK)経由でしか判断idを
+    /// 引けない——テストのassertionを挿入する前に、判断エンティティを
+    /// カタログへ先に登録しておく（実運用の`import-legacy`→
+    /// `build-catalog`の順序と同じ）。
+    fn ensure_judgment(prov: &ProvenanceStore, id: i64) {
+        prov.get_or_insert_entity(
+            &NewEntity { kind: EntityKind::Judgment, display_label: format!("j{id}"), source_record_id: None },
+            &format!("judgment:{id}"),
+        )
+        .unwrap();
+    }
+
+    fn ensure_concept(prov: &ProvenanceStore, phrase: &str) {
+        prov.get_or_insert_entity(
+            &NewEntity { kind: EntityKind::Concept, display_label: phrase.into(), source_record_id: None },
+            &format!("concept:{phrase}"),
+        )
+        .unwrap();
+    }
 
     fn setup() -> (ProvenanceStore, crate::model::ReleaseId, crate::model::SourceRecordId) {
         let prov = ProvenanceStore::open_in_memory().unwrap();
@@ -273,6 +326,8 @@ mod tests {
     #[test]
     fn dependency_edges_reconstruct_from_to_from_refs() {
         let (prov, release, source) = setup();
+        ensure_judgment(&prov, 5);
+        ensure_judgment(&prov, 2);
         let a = prov
             .insert_assertion(&NewRelationAssertion {
                 subject_ref: "judgment:5".into(),
@@ -302,7 +357,7 @@ mod tests {
         .unwrap();
 
         let assertions = prov.list_assertions_for_release(release).unwrap();
-        let deps = build_dependency_edges(&assertions);
+        let deps = build_dependency_edges(&prov, &assertions).unwrap();
         assert_eq!(deps.len(), 1);
         assert_eq!(deps[0].from, 5);
         assert_eq!(deps[0].to, 2);
@@ -317,6 +372,10 @@ mod tests {
     #[test]
     fn dependency_edge_carries_the_traversal_policy_computed_from_its_epistemic_state() {
         let (prov, release, source) = setup();
+        ensure_judgment(&prov, 1);
+        ensure_judgment(&prov, 2);
+        ensure_judgment(&prov, 3);
+        ensure_judgment(&prov, 4);
         let extracted = prov
             .insert_assertion(&NewRelationAssertion {
                 subject_ref: "judgment:1".into(),
@@ -348,7 +407,7 @@ mod tests {
         let _ = source;
 
         let assertions = prov.list_assertions_for_release(release).unwrap();
-        let deps = build_dependency_edges(&assertions);
+        let deps = build_dependency_edges(&prov, &assertions).unwrap();
         let by_id = |id: i64| deps.iter().find(|d| d.assertion_id == id).unwrap();
         assert_eq!(by_id(extracted.0).traversal_policy, "visible_only");
         assert_eq!(by_id(observed.0).traversal_policy, "default_traversal");
@@ -364,6 +423,8 @@ mod tests {
         rationale: Option<&str>,
         accepted: bool,
     ) -> i64 {
+        ensure_judgment(prov, 1);
+        ensure_judgment(prov, 2);
         let a = prov
             .insert_assertion(&NewRelationAssertion {
                 subject_ref: "judgment:1".into(),
@@ -448,6 +509,8 @@ mod tests {
         sentence: Option<&str>,
         metric_value: Option<f64>,
     ) -> i64 {
+        ensure_concept(prov, subject);
+        ensure_concept(prov, "broader");
         let a = prov
             .insert_assertion(&NewRelationAssertion {
                 subject_ref: format!("concept:{subject}"),
@@ -528,6 +591,8 @@ mod tests {
     fn every_generated_edge_resolves_to_a_consistent_assertion() {
         let (prov, release, source) = setup();
         // 依存関係。
+        ensure_judgment(&prov, 10);
+        ensure_judgment(&prov, 11);
         let dep_a = prov
             .insert_assertion(&NewRelationAssertion {
                 subject_ref: "judgment:10".into(),
@@ -563,7 +628,7 @@ mod tests {
         insert_relation(&prov, release, source, "sweep-grounded", Some("s2"), None);
 
         let assertions = prov.list_assertions_for_release(release).unwrap();
-        let dependencies = build_dependency_edges(&assertions);
+        let dependencies = build_dependency_edges(&prov, &assertions).unwrap();
         let morphisms = build_morphism_edges(&prov, &assertions).unwrap();
         let relations = build_relation_edges(&prov, &assertions).unwrap();
         assert_eq!(dependencies.len(), 1);

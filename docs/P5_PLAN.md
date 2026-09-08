@@ -90,7 +90,10 @@ additively, then cut over, never a big-bang rewrite):
    switch readers (`web_export.rs`, `assertion_export.rs`,
    `catalog_adapter.rs`'s coverage report) to the FK columns, then in a
    later, separate release drop the TEXT columns. This document does not
-   propose doing steps 1–4 in one sitting.
+   propose doing steps 1–4 in one sitting. **Step 4 done** — see
+   `docs/P5_STATUS.md`'s "Item 2 step 4" section. Dropping the TEXT
+   columns themselves is not proposed or started; they remain the
+   display/debug format.
 
 **Not proposed:** changing the wire format of `subject_ref`/`object_ref`
 strings themselves (e.g. `"judgment:5635"`) — they remain a legitimate,

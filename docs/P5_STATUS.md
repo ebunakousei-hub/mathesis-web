@@ -201,6 +201,83 @@ covered by adversarial tests yet. Before treating it as done:
   since the catalog is present) passes cleanly against this backfilled
   database with no new failures.
 
+## Item 2 step 4: readers switched to EntityId as the authoritative join key
+
+With the backfill proven at 100% real coverage, switched the three named
+readers from parsing `subject_ref`/`object_ref` strings to resolving
+through `subject_entity_id`/`object_entity_id` (the FK). The tagged
+strings remain in the schema and on the wire for display/debugging, as
+`docs/P5_PLAN.md` always said they would — only their role as the
+*authoritative* source of truth changes.
+
+- `web_export.rs`: `build_dependency_edges`/`build_morphism_edges` derive
+  `from`/`to`/`src`/`dst` via a new `judgment_id_for_entity` reverse
+  lookup (judgment entities always have exactly one ref, so this is
+  unambiguous) instead of stripping a `"judgment:"` prefix off the raw
+  string. `build_relation_edges` now emits `subject`/`object` as the
+  resolved entity's `display_label` (the Entity Resolution representative
+  phrase) instead of the raw recorded phrase. All three now require both
+  endpoints to have a populated FK to be included at all — an assertion
+  with an unresolved endpoint no longer sneaks through on a
+  coincidentally well-formed string. `build_web_export` fails loudly
+  (`entity_count() == 0`) rather than silently writing empty files if
+  `build-catalog` hasn't run yet — `build-catalog` is now a de facto
+  prerequisite for `web-export`, and that needs to be an explicit error,
+  not a quiet empty export.
+- `catalog_adapter.rs::assertion_reference_coverage`: reads
+  `subject_entity_id`/`object_entity_id` directly instead of re-resolving
+  209,416 refs through `resolve_entity_ref` on every call.
+- `assertion_export.rs::entity_label_with_origin`: now takes
+  `Option<EntityId>` (the assertion's own FK) instead of a ref string to
+  re-resolve. The unused sibling `entity_label_for` (dead code — never
+  called anywhere) was deleted rather than updated.
+
+**A real bug found and fixed, not just an architectural nicety.**
+Diffing live output against what `web/public/` was already serving
+turned up exactly 3 (of 1,051) concept relations whose recorded
+`subject_ref`/`object_ref` phrase was a spelling *alias*, not the
+Entity-Resolution representative: `"pull back"` vs. the representative
+`"pull-back"`, `"one dimensional"` vs. `"one-dimensional"`, `"dg module"`
+vs. `"dg-modules"`. `web/src/dynamicTaxonomy.ts`'s `expandRelations`
+keys its lookup map by whatever phrase `relations.json` gives it, and the
+concept-detail view only ever looks a relation up by the *representative*
+phrase (`h.phrase`, sourced from the search index) — so these 3 relations
+were filed under a map key nobody ever queries and were **invisible on
+their own concept's page** in the live, already-published site. Switching
+`build_relation_edges` to emit the entity's `display_label` fixes this:
+diffed `dependencies.json`/`morphisms.json` byte-identical before/after
+(no other change), `relations.json` differs in exactly these 3 rows, and
+`assertions.json`'s `subjectLabel`/`objectLabel` (already FK-derived
+since P3) are identical across all 8,969 entries — confirming the FK and
+string paths always agreed except in these 3 cases, which is exactly the
+class of divergence this migration exists to eliminate. Browser-verified
+live: the "pull-back" concept page now shows its relation to "finite
+fourier series" with evidence sentence and provenance link, which it did
+not before.
+
+**Incidental finding while regenerating for real-data verification**:
+`web/public/assertions.json` had been stale since the P5 Item 1 round —
+`traversalPolicy`/`locatorPrecision`/`subjectLabelOrigin`/
+`objectLabelOrigin` were added to the Rust struct and TS type then, but
+`reconcile` (the command that writes `assertions.json`) was never rerun
+afterward, only `web-export` was. Regenerated and promoted it as part of
+this round; confirmed the only differences from the stale file were the
+missing fields themselves — zero label or ref content actually changed
+(checked all 8,969 entries programmatically before promoting).
+
+Test fallout from making `web-export` require a populated catalog:
+`release_gate_test.rs`'s fixtures never registered catalog entities
+(they predate P3), so all 7 of its tests started failing with the new
+`entity_count() == 0` guard. Fixed by registering judgment/concept
+entities before inserting assertions, matching the real
+`import-legacy` → `build-catalog` ordering — including one test
+(`detects_stale_export_after_the_store_changes`) whose whole premise (a
+newly-added, uncataloged morphism should make the live store diverge
+from an old export) silently stopped working once uncataloged
+assertions became invisible to `web_export.rs`; fixed by cataloging the
+new morphism's endpoints too, so the test still exercises a *valid* new
+edge rather than accidentally testing nothing.
+
 ## Verified
 
 - 6 new/updated Rust tests (`web_export.rs`) confirming `traversalPolicy`
@@ -208,12 +285,26 @@ covered by adversarial tests yet. Before treating it as done:
   `verify-release` re-run against the regenerated
   `dependencies.json`/`morphisms.json` (now carrying the new field) passes
   cleanly — P1/P2 gates unaffected.
-- Item 2: 78/78 Rust tests pass workspace-wide, including 10 new
-  adversarial tests covering every scenario named above; real `build-
-  catalog` run backfills 104,708/104,708 assertions in 53 seconds (down
-  from a 15+-minute run that was stopped after finding the missing-
-  transaction bug); real `verify-release` passes cleanly with the new
-  drift checks active.
+- Item 2 additive stage: 78/78 Rust tests pass workspace-wide, including
+  10 new adversarial tests covering every scenario named above; real
+  `build-catalog` run backfills 104,708/104,708 assertions in 53 seconds
+  (down from a 15+-minute run that was stopped after finding the
+  missing-transaction bug); real `verify-release` passes cleanly with
+  the new drift checks active.
+- Item 2 step 4 (readers switched to EntityId): 80/80 Rust tests pass
+  (2 new: `judgment_id_for_entity` on a judgment and on a concept, plus
+  fixes to 7 pre-existing `release_gate_test.rs` tests whose fixtures
+  predated the catalog). Real `web-export`: `dependencies.json`/
+  `morphisms.json` diffed byte-identical against what was already live;
+  `relations.json` differs in exactly the 3 rows named above, confirmed
+  by a full programmatic diff, not spot-checking. `reconcile`'s
+  `assertions.json` diffed with zero label/ref changes across all 8,969
+  entries once the incidental staleness fields are excluded.
+  `verify-release` passes cleanly against the fully-updated real
+  database and files. `npm run eval` unchanged. Browser-verified live:
+  navigated to the "pull-back" concept page and confirmed its relation
+  to "finite fourier series" — with evidence sentence and provenance
+  link — now renders, which it did not on the previously-published site.
 - `npm run build` and `npx tsc --noEmit` clean; `npm run eval` unchanged
   (MRR@10 0.9667, Top-1 95%, dead 0% — same numbers as before this
   change, confirming no regression to search).
@@ -251,3 +342,13 @@ covered by adversarial tests yet. Before treating it as done:
   schema-level guarantees (pre-migration DB, idempotent reopen, dangling
   FK rejected by SQLite itself) that need raw `rusqlite` access and so
   don't fit `verify_test.rs`'s public-API-only convention.
+- `crates/mathesis-provenance/src/entity.rs::judgment_id_for_entity` —
+  the `EntityId` → judgment-numeric-id reverse lookup `web_export.rs`
+  now uses instead of string parsing.
+- `crates/mathesis-provenance/src/web_export.rs::build_dependency_edges`/
+  `build_morphism_edges`/`build_relation_edges` — all three now
+  FK-authoritative; `build_web_export`'s `entity_count() == 0` guard.
+- `crates/mathesis-provenance/src/assertion_export.rs::entity_label_with_origin`
+  — now takes the FK directly.
+- `crates/mathesis-provenance/src/catalog_adapter.rs::assertion_reference_coverage`
+  — now reads the FK columns instead of re-resolving.

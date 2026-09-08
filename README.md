@@ -24,11 +24,15 @@ Lean/Coq の証明支援系や arXiv から数学的知識を構造化し、検�
 - **Phase 4: OpenAlexアダプタ**: [docs/P4_STATUS.md](docs/P4_STATUS.md)
   （実データでは種論文138件が互いに引用し合っておらず、引用リンクは0件——
   実装は正しく検証済み、結果は正直に記録。計画は[docs/P4_PLAN.md](docs/P4_PLAN.md)）
-- **Phase 5, 増分1: `traversalPolicy`のクライアント配線**:
+- **Phase 5: `traversalPolicy`配線・`EntityId`をFKとして本採用**:
   [docs/P5_STATUS.md](docs/P5_STATUS.md)
-  （実データでは既定トラバース対象の辺が0件——回帰を避けつつ「信頼できる
-  辺だけ」トグルを追加。項目2(`EntityId`外部キー移行)・3(宣言的
-  `RelationSchema`)は[docs/P5_PLAN.md](docs/P5_PLAN.md)のまま未着手）
+  （項目1: 既定トラバース対象の辺が実データで0件——回帰を避けつつ
+  「信頼できる辺だけ」トグルを追加。項目2: `subject_ref`/`object_ref`
+  文字列ではなく`subject_entity_id`/`object_entity_id`(FK)を
+  `web_export.rs`/`assertion_export.rs`/カタログカバレッジ集計の真実の
+  記録として採用——実データで表記ゆれにより孤立していた概念関係3件が
+  可視化された。項目3(宣言的`RelationSchema`)は
+  [docs/P5_PLAN.md](docs/P5_PLAN.md)のまま未着手）
 
 このファイルはルート直下のクレート構成の見取り図。各クレートの詳細な
 設計判断は各 `src/lib.rs` 冒頭のドキュメントコメントを参照。

@@ -12,7 +12,8 @@ use mathesis_provenance::manifest::{
     input_file_hash, WebExportCounts, WebExportManifest, WEB_EXPORT_SCHEMA_VERSION,
 };
 use mathesis_provenance::model::{
-    EpistemicState, EvidenceKind, NewEvidence, NewRelationAssertion, NewRelease, NewSourceRecord, RelationKind,
+    EntityKind, EpistemicState, EvidenceKind, NewEntity, NewEvidence, NewRelationAssertion, NewRelease, NewSourceRecord,
+    RelationKind,
 };
 use mathesis_provenance::release_gate::verify_web_export;
 use mathesis_provenance::web_export::build_web_export;
@@ -41,6 +42,22 @@ fn seed_store() -> (ProvenanceStore, String, i64) {
             parser_version: None,
         })
         .unwrap();
+
+    // P5, Item 2 step 4（`docs/P5_PLAN.md`）: `build_web_export`は今や
+    // `subject_entity_id`/`object_entity_id`(FK)経由でしか辺を組み立てない
+    // ——`import-legacy`の後`build-catalog`を走らせる実運用と同じ順で、
+    // assertionを挿入する前にカタログへ登録しておく。
+    for (kind, ref_string, label) in [
+        (EntityKind::Judgment, "judgment:1", "j1"),
+        (EntityKind::Judgment, "judgment:2", "j2"),
+        (EntityKind::Judgment, "judgment:3", "j3"),
+        (EntityKind::Judgment, "judgment:4", "j4"),
+        (EntityKind::Concept, "concept:a", "a"),
+        (EntityKind::Concept, "concept:b", "b"),
+    ] {
+        prov.get_or_insert_entity(&NewEntity { kind, display_label: label.into(), source_record_id: None }, ref_string)
+            .unwrap();
+    }
 
     let dep = prov
         .insert_assertion(&NewRelationAssertion {
@@ -190,7 +207,22 @@ fn detects_stale_export_after_the_store_changes() {
     let manifest = write_web_export(&prov, &tag, release_id, &dir);
 
     // マニフェスト作成後にDB側へ新しい射を追加——`web-export`の再実行を
-    // 忘れたまま古いファイルを配布してしまうシナリオ。
+    // 忘れたまま古いファイルを配布してしまうシナリオ。カタログにも登録する
+    // (P5, Item 2 step 4以降、未カタログの新規assertionはFKが無いため
+    // `build_web_export`から素通しで除外され、この「変化」自体が起きなく
+    // なってしまう——このテストが検査したいのはあくまで「有効な新規辺が
+    // 増えたのに古いファイルのまま」というシナリオなので、実運用同様
+    // カタログ登録込みで新規assertionを仕込む)。
+    prov.get_or_insert_entity(
+        &mathesis_provenance::model::NewEntity { kind: EntityKind::Judgment, display_label: "j5".into(), source_record_id: None },
+        "judgment:5",
+    )
+    .unwrap();
+    prov.get_or_insert_entity(
+        &mathesis_provenance::model::NewEntity { kind: EntityKind::Judgment, display_label: "j6".into(), source_record_id: None },
+        "judgment:6",
+    )
+    .unwrap();
     let source = prov
         .get_or_insert_source_record(&NewSourceRecord {
             provider: "mathesis-legacy-snapshot".into(),

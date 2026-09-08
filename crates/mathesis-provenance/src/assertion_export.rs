@@ -97,22 +97,25 @@ pub fn evidence_details_for(prov: &ProvenanceStore, id: AssertionId) -> anyhow::
         .collect()
 }
 
-/// 1件のassertionのReviewDecision行をすべて`ReviewDecisionDetail`へ組み立てる。
-/// `ref_string`（`subject_ref`/`object_ref`のタグ付き文字列）が指す
-/// エンティティの表示名を引く。カタログ未構築、またはその参照がまだ
-/// カタログに載っていなければ`None`——`try_get_entity`ではなく
-/// `resolve_entity_ref`から辿るのは、conceptの表記ゆれ（aliasのref文字列）
-/// も直接引けるようにするため。
-pub fn entity_label_for(prov: &ProvenanceStore, ref_string: &str) -> anyhow::Result<Option<String>> {
-    let Some(entity_id) = prov.resolve_entity_ref(ref_string)? else { return Ok(None) };
-    Ok(prov.try_get_entity(entity_id)?.map(|e| e.display_label))
-}
-
+/// 与えられた`EntityId`(=`subject_entity_id`/`object_entity_id`、FK)の
+/// 表示名と由来を引く。`None`はFK自体が未解決(カタログ未構築、または
+/// その参照がまだカタログに載っていない)——`try_get_entity`が実際に
+/// 引けなかった場合と区別せず両方`None`にする、無いものを捏造しない方針
+/// は変わらない。
+///
+/// P5, Item 2 step 4（`docs/P5_PLAN.md`）: 以前は`ref_string`を
+/// `resolve_entity_ref`で都度引き直していた——今は呼び出し元
+/// (`export_assertion_details`)が持つ`assertion.subject_entity_id`/
+/// `object_entity_id`をそのまま渡す。FKが真実の記録なので、文字列の
+/// 表記ゆれ（`concept:kahler manifolds`のようなalias形）を経由しても
+/// 正しいエンティティへ辿り着く——`resolve_entity_ref`と等価だが、
+/// 「このassertionが実際に指しているエンティティ」を再解決ではなく
+/// 直接参照する点が異なる。
 pub fn entity_label_with_origin(
     prov: &ProvenanceStore,
-    ref_string: &str,
+    entity_id: Option<crate::model::EntityId>,
 ) -> anyhow::Result<(Option<String>, Option<String>)> {
-    let Some(entity_id) = prov.resolve_entity_ref(ref_string)? else {
+    let Some(entity_id) = entity_id else {
         return Ok((None, None));
     };
     let entity = prov.try_get_entity(entity_id)?;
@@ -149,8 +152,8 @@ pub fn export_assertion_details(
         let Some(assertion) = prov.try_get_assertion(id)? else { continue };
         let evidence = evidence_details_for(prov, id)?;
         let review_decisions = review_decision_details_for(prov, id)?;
-        let (subject_label, subject_label_origin) = entity_label_with_origin(prov, &assertion.subject_ref)?;
-        let (object_label, object_label_origin) = entity_label_with_origin(prov, &assertion.object_ref)?;
+        let (subject_label, subject_label_origin) = entity_label_with_origin(prov, assertion.subject_entity_id)?;
+        let (object_label, object_label_origin) = entity_label_with_origin(prov, assertion.object_entity_id)?;
         out.insert(
             raw_id.to_string(),
             AssertionDetail {

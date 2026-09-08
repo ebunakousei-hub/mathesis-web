@@ -93,6 +93,21 @@ impl ProvenanceStore {
             .map(|opt| opt.map(EntityId))
     }
 
+    /// P5, Item 2 step 4（`docs/P5_PLAN.md`）: `EntityId`から、その判断
+    /// 自身の`mathesis-graph`上の数値idへ逆引きする。`web_export.rs`が
+    /// `subject_ref`の文字列プレフィックスを剥がす代わりに、`subject_entity_id`
+    /// (FK)を出典として使うために要る——conceptやpaperと違い、Judgment
+    /// エンティティは`catalog_adapter::build_judgment_paper_catalog`により
+    /// 常にちょうど1つのref(`"judgment:<id>"`)しか持たない(aliasが無い)ので、
+    /// この逆引きは曖昧にならない。
+    pub fn judgment_id_for_entity(&self, id: EntityId) -> Result<Option<i64>> {
+        self.conn
+            .prepare_cached("SELECT ref_string FROM entity_refs WHERE entity_id = ?1 AND ref_string LIKE 'judgment:%' LIMIT 1")?
+            .query_row(params![id.0], |r| r.get::<_, String>(0))
+            .optional()
+            .map(|opt| opt.and_then(|s| s.strip_prefix("judgment:").and_then(|n| n.parse().ok())))
+    }
+
     pub fn resolve_entity_ref_with_kind(&self, ref_string: &str) -> Result<Option<(EntityId, EntityKind)>> {
         self.conn
             .prepare_cached(
@@ -396,5 +411,20 @@ mod tests {
         let (complete_after, total_after) = prov.assertion_entity_id_coverage().unwrap();
         assert_eq!(total_after, 2);
         assert_eq!(complete_after, 2);
+    }
+
+    #[test]
+    fn judgment_id_for_entity_reverses_the_canonical_ref() {
+        let prov = ProvenanceStore::open_in_memory().unwrap();
+        let (id, _) = prov.get_or_insert_entity(&judgment_entity("a"), "judgment:42").unwrap();
+        assert_eq!(prov.judgment_id_for_entity(id).unwrap(), Some(42));
+    }
+
+    #[test]
+    fn judgment_id_for_entity_is_none_for_a_concept_entity() {
+        let prov = ProvenanceStore::open_in_memory().unwrap();
+        let new = NewEntity { kind: EntityKind::Concept, display_label: "kahler manifold".into(), source_record_id: None };
+        let (id, _) = prov.get_or_insert_entity(&new, "concept:kahler manifold").unwrap();
+        assert_eq!(prov.judgment_id_for_entity(id).unwrap(), None, "concept参照にはjudgment:プレフィックスのrefが無い");
     }
 }

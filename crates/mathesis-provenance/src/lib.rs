@@ -25,6 +25,7 @@ pub mod relation_policy;
 pub mod source_adapter;
 pub mod licensing;
 pub mod lean_manifest_adapter;
+pub mod math_graph_adapter;
 pub mod msc_adapter;
 pub mod openalex_adapter;
 pub mod openalex_fetch;

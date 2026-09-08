@@ -76,6 +76,17 @@ Lean/Coq の証明支援系や arXiv から数学的知識を構造化し、検�
   `verify-release`通過・UI表示まで確認してから元に戻した(内容の採否は
   ユーザーの判断であり、機構の検証と混同しない)。過程で`relations.json`
   生成の実バグ2件を発見・修正）
+- **Phase 7: Math-Graphのスコープ限定オフライン取り込みパイロット**:
+  [docs/P7_STATUS.md](docs/P7_STATUS.md)
+  （`uw-math-ai/math-graph`(CC BY 4.0、HuggingFace APIで確認済み)の
+  LeanGraphを、P6.2と同じ2つのMathlib名前空間だけに絞って隔離DBへ試験
+  取り込み——生API(`api.theoremsearch.com`、無ライセンス)には一切触れず、
+  本文テキストも取り込まない(graph structure first)。`epistemic_state:
+  extracted`(`observed`ではなく意図的な信頼ポリシーの選択)により既定
+  トラバース対象化を防止。P6.2自身のMathlib抽出と突き合わせたところ、
+  同じ5ファイルを覆っていながら宣言名の一致はわずか1件——ファイルパス
+  一致 対 推移的import到達という、抽出方針そのものの違いとして報告
+  （優劣の主張はしない）。本番`scratch/provenance.db`には一切触れていない）
 
 このファイルはルート直下のクレート構成の見取り図。各クレートの詳細な
 設計判断は各 `src/lib.rs` 冒頭のドキュメントコメントを参照。

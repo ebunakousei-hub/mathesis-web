@@ -729,6 +729,7 @@ name = "mathesis-provenance"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "csv",
  "mathesis-ast",
  "mathesis-graph",
  "mathesis-msc",

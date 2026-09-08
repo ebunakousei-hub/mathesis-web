@@ -7,6 +7,7 @@ use mathesis_provenance::assertion_export::export_assertion_details;
 use mathesis_provenance::catalog_adapter::{build_concept_catalog, build_judgment_paper_catalog, catalog_metadata};
 use mathesis_provenance::lean_manifest_adapter;
 use mathesis_provenance::legacy_adapter::{import_graph, import_taxonomy_relations, ADAPTER_NAME, ADAPTER_VERSION};
+use mathesis_provenance::math_graph_adapter::{self, PilotEdge, PilotStatement};
 use mathesis_provenance::msc_adapter;
 use mathesis_provenance::openalex_adapter;
 use mathesis_provenance::openalex_fetch::{self, SnapshotEntry};
@@ -118,7 +119,18 @@ fn usage() -> ! {
          \x20     (depends_on assertion, epistemic_state: observed,\n\
          \x20     evidence_kind: formal_export)。既存のテキスト抽出\n\
          \x20     (judgment_dependency:...)とは別のlegacy_ref名前空間を使う\n\
-         \x20     ので両方が共存する——置き換えではなく比較用の追加。"
+         \x20     ので両方が共存する——置き換えではなく比較用の追加。\n\
+         \x20 import-math-graph --db <path> --release <tag>\n\
+         \x20                   --statements <pilot_statements.json> --edges <pilot_edges.json>\n\
+         \x20                   --dataset-revision <content_hash_or_note>\n\
+         \x20     P7（docs/P7_STATUS.md）: uw-math-ai/math-graph（CC BY 4.0）のLeanGraphを、\n\
+         \x20     scratch/math_graph_pilot/scope_pilot.pyが絞り込んだスコープ(P6.2の\n\
+         \x20     2つのMathlib名前空間と同じ)ぶんだけ取り込む。多GBの生CSVはこの\n\
+         \x20     コマンド自身は一切開かない——絞り込み済みの2つの小さいJSONだけを読む。\n\
+         \x20     epistemic_state: extracted（observedではない、独立検証していないため）、\n\
+         \x20     evidence_kind: formal_export、subject_ref/object_refは\n\
+         \x20     judgment:mathgraph:<uuid>という別名前空間——既定では\n\
+         \x20     dependencies.jsonにも既定トラバース対象にもならない。"
     );
     std::process::exit(1);
 }
@@ -147,6 +159,7 @@ fn main() -> Result<()> {
         Some("import-lean-manifest") => run_import_lean_manifest(&args[2..]),
         Some("review") => run_review(&args[2..]),
         Some("promote-review") => run_promote_review(&args[2..]),
+        Some("import-math-graph") => run_import_math_graph(&args[2..]),
         _ => usage(),
     }
 }
@@ -315,6 +328,44 @@ fn run_import_lean_manifest(args: &[String]) -> Result<()> {
         stats.dependencies_imported, stats.dependencies_skipped_existing, stats.declarations_unmatched, stats.dependency_targets_unmatched,
     );
     lean_manifest_adapter::compare_dependency_sources(&prov, &graph, release.id, &arxiv_id, &raw)?.print();
+    Ok(())
+}
+
+/// P7（`docs/P7_STATUS.md`）: `scope_pilot.py`が書き出した、スコープを
+/// 絞ったJSON2つ(宣言・依存辺)だけを読む。生のMath-Graph CSV(計13.6GB)は
+/// このバイナリのどのコードパスからも開かない——Pythonの前処理でだけ触れる、
+/// `openalex_fetch.rs`(ネットワーク取得)と`openalex_adapter.rs`(純粋な
+/// インポート)の分離と同じ設計。
+fn run_import_math_graph(args: &[String]) -> Result<()> {
+    let db = PathBuf::from(require_flag(args, "--db")?);
+    let release_tag = require_flag(args, "--release")?.to_string();
+    let statements_path = PathBuf::from(require_flag(args, "--statements")?);
+    let edges_path = PathBuf::from(require_flag(args, "--edges")?);
+    let dataset_revision = require_flag(args, "--dataset-revision")?.to_string();
+
+    let prov = ProvenanceStore::open(&db).with_context(|| format!("{db:?} を開けません"))?;
+    let release = prov
+        .get_release_by_tag(&release_tag)?
+        .with_context(|| format!("release '{release_tag}' not found — run import-legacy first"))?;
+
+    let statements: Vec<PilotStatement> = serde_json::from_slice(
+        &std::fs::read(&statements_path).with_context(|| format!("{statements_path:?} を開けません"))?,
+    )
+    .with_context(|| format!("{statements_path:?} のパースに失敗"))?;
+    let edges: Vec<PilotEdge> = serde_json::from_slice(
+        &std::fs::read(&edges_path).with_context(|| format!("{edges_path:?} を開けません"))?,
+    )
+    .with_context(|| format!("{edges_path:?} のパースに失敗"))?;
+
+    let stats = prov.transaction(|| math_graph_adapter::import_pilot(&prov, release.id, &statements, &edges, &dataset_revision))?;
+    println!(
+        "Math-Graph pilot: declarations +{} (skip {}), dependencies +{} (skip {}), {} dependency targets outside the pilot scope (ignored)",
+        stats.declarations_imported,
+        stats.declarations_skipped_existing,
+        stats.dependencies_imported,
+        stats.dependencies_skipped_existing,
+        stats.dependencies_outside_pilot_scope,
+    );
     Ok(())
 }
 

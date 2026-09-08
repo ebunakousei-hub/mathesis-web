@@ -311,6 +311,14 @@ export interface EvidenceDetail {
    * mathlib 5c8398df, filter policy mathesis-lean-dependency-filter-v1")。
    */
   formalRevision: string | null;
+  /**
+   * P7.1（`docs/P7_1_STATUS.md`）: `sourceProvider`の生の識別子だけでは
+   * 「これはMathesis自身の抽出か、外部データセットの主張か」が初見の
+   * 読者に伝わらない——サーバ側`assertion_export::source_kind_label`が
+   * 既知のproviderへ付ける短い人間可読な説明。未知のproviderは
+   * `sourceProvider`をそのまま返す(捏造しない)。
+   */
+  sourceKindLabel: string;
 }
 
 export interface ReviewDecisionDetail {

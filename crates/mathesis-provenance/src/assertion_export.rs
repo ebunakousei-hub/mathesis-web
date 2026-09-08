@@ -35,6 +35,29 @@ pub struct EvidenceDetail {
     /// mathesis-lean-dependency-filter-v1")。詳細パネルが「どのLean/
     /// フィルタ版がこの辺を作ったか」を生のJSONを見せずに説明できるように。
     pub formal_revision: Option<String>,
+    /// P7.1（`docs/P7_1_STATUS.md`）: `source_provider`の生の識別子文字列
+    /// ("lean-elaborator"/"math-graph"/...)だけでは、初見の読者に
+    /// 「これはMathesis自身が抽出したのか、外部データセットの主張なのか」
+    /// が伝わらない——`source_kind_label`(`source_kind`)へ委譲した
+    /// 人間可読な短い説明を持たせる。既知でないproviderは
+    /// 素通し(生のprovider文字列をそのまま見せる)——分類を捏造しない。
+    pub source_kind_label: String,
+}
+
+/// P7.1: `SourceRecord.provider`から「どの経路の証拠か」への、既知の
+/// providerだけを対象にした人間可読な説明。新しいアダプタを足すたびに
+/// ここへ1行追加する規律——未知のprovider文字列をここで推測しない
+/// (デフォルトは生の`provider`をそのまま返す、`_ => provider.to_string()`)。
+pub fn source_kind_label(provider: &str) -> String {
+    match provider {
+        "lean-elaborator" => "Mathesis's own Lean build (mathesis-lean-extract)".to_string(),
+        "mathesis-legacy-snapshot" => "Mathesis's own text extraction (mathesis-importer)".to_string(),
+        "math-graph" => "External dataset: Math-Graph (uw-math-ai, CC BY 4.0) — not independently verified by Mathesis".to_string(),
+        "openalex" => "External database: OpenAlex (CC0)".to_string(),
+        "msc2020" => "External taxonomy: MSC2020".to_string(),
+        "manual-review" => "A human reviewer's own judgment".to_string(),
+        other => other.to_string(),
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -127,6 +150,7 @@ pub fn evidence_details_for(prov: &ProvenanceStore, id: AssertionId) -> anyhow::
             } else {
                 None
             };
+            let source_provider = source.as_ref().map(|s| s.provider.clone()).unwrap_or_default();
             Ok(EvidenceDetail {
                 evidence_kind: e.evidence_kind.as_str().to_string(),
                 locator: e.locator,
@@ -134,7 +158,8 @@ pub fn evidence_details_for(prov: &ProvenanceStore, id: AssertionId) -> anyhow::
                 extractor_or_model: e.extractor_or_model,
                 metric_name: e.metric_name,
                 metric_value: e.metric_value,
-                source_provider: source.as_ref().map(|s| s.provider.clone()).unwrap_or_default(),
+                source_kind_label: source_kind_label(&source_provider),
+                source_provider,
                 source_provider_id: source.as_ref().map(|s| s.provider_id.clone()).unwrap_or_default(),
                 dependency_origin: e.dependency_origin,
                 formal_revision,

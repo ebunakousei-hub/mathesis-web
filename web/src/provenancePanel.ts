@@ -68,7 +68,7 @@ function renderEvidence(e: AssertionDetail["evidence"][number]): string {
       <div class="prov-evidence-kind">${escapeHtml(e.evidenceKind)}${e.extractorOrModel ? ` · ${escapeHtml(e.extractorOrModel)}` : ""}</div>
       ${e.locator ? `<div class="prov-evidence-locator">"${escapeHtml(e.locator)}"</div>` : `<div class="prov-evidence-locator prov-muted">(no source span retained)</div>`}
       ${metric ? `<div class="prov-evidence-metric">${metric}</div>` : ""}
-      <div class="prov-evidence-source">source: ${escapeHtml(e.sourceProvider)}:${escapeHtml(e.sourceProviderId)}</div>
+      <div class="prov-evidence-source"><b>${escapeHtml(e.sourceKindLabel)}</b> (source: ${escapeHtml(e.sourceProvider)}:${escapeHtml(e.sourceProviderId)})</div>
       ${
         isFormalExport
           ? `<div class="prov-evidence-formal">

@@ -4,7 +4,7 @@
   "releaseId": 1,
   "releaseGitCommit": "626500f8e2736719997fa8922b761e4d72d07730",
   "webExportVersion": "0.1.0",
-  "generatedAtUnix": 1788842767,
+  "generatedAtUnix": 1788910205,
   "counts": {
     "dependencies": 6185,
     "morphisms": 2284,
@@ -21,7 +21,7 @@
     },
     {
       "path": "web/public\\relations.json",
-      "sha256": "12315d52f2c0b41132c45b1131626c6708bbfbbf1e74680503d06fac28feaf71"
+      "sha256": "3336f8a99c72a40706871828fb7b707d72b798897e6b4abf18b3dac4b48d4e1f"
     }
   ]
 }

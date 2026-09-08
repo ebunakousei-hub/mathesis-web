@@ -459,3 +459,189 @@ fn rejects_manifest_with_unknown_mapping_policy() {
     .unwrap();
     assert!(report.failures.iter().any(|f| f.check == "source_mapping_policy_mismatch"));
 }
+
+// Priority 2, step 2（ユーザー指示 2026-09-08）: 「extracted/proposedな辺が
+// 事故で信頼される側へ紛れ込めない」ことを確かめる異常系群。
+
+/// `Observed`(既定トラバース対象になるべき状態)なのに、根拠が
+/// テキスト抽出由来(SourceSpan)しか無い——`epistemic_state`だけ手違いで
+/// 書き換わり、根拠がついてきていない事故を想定。
+#[test]
+fn rejects_a_default_traversal_assertion_backed_only_by_text_extraction_evidence() {
+    let prov = ProvenanceStore::open_in_memory().unwrap();
+    let release = prov
+        .get_or_insert_release(&NewRelease { tag: "t".into(), git_commit: None, generated_at_unix: 0, notes: None })
+        .unwrap();
+    let source = prov
+        .get_or_insert_source_record(&NewSourceRecord {
+            provider: "test".into(), provider_id: "t".into(), provider_revision: None, retrieved_at_unix: None,
+            content_hash: None, licence: None, attribution: None, raw_payload_uri: None,
+            adapter_name: "test".into(), adapter_version: "0".into(), parser_version: None,
+        })
+        .unwrap();
+    let assertion_id = prov
+        .insert_assertion(&NewRelationAssertion {
+            subject_ref: "judgment:1".into(),
+            predicate: RelationKind::DependsOn,
+            object_ref: "judgment:2".into(),
+            epistemic_state: EpistemicState::Observed, // 既定トラバース対象になる状態
+            score: None, policy_version: None, created_by_run_id: None, supersedes_id: None,
+            release_id: release, legacy_ref: Some("d1".into()),
+        })
+        .unwrap();
+    prov.insert_evidence(&mathesis_provenance::model::NewEvidence {
+        assertion_id, source_record_id: source, locator: Some("looks like text-extraction, not a Lean manifest".into()),
+        evidence_kind: EvidenceKind::SourceSpan, // FormalExportではない
+        extractor_or_model: None, version: None, input_hash: None, output_hash: None, metric_name: None, metric_value: None,
+    })
+    .unwrap();
+
+    let manifest = base_manifest(release.0);
+    let report = verify_release(
+        &prov,
+        &VerifyInputs {
+            manifest: &manifest,
+            judgments_provenance: &base_judgments_sidecar(assertion_id.0),
+            relations_provenance: &empty_relations_sidecar(),
+            live_input_files: &[],
+        },
+    )
+    .unwrap();
+    assert!(
+        report.failures.iter().any(|f| f.check == "trusted_assertion_missing_qualifying_evidence"),
+        "observedなのにFormalExport証拠が無い場合は拒否すべき: {:?}",
+        report.failures
+    );
+}
+
+/// レビュー済みで既定トラバース対象になりうる意味的関係だが、
+/// ReviewDecisionにreviewer_idが無い(誰が承認したか分からない)——
+/// 「本人確認済みレビュー」の要件を満たさない。
+#[test]
+fn rejects_a_default_traversal_assertion_whose_review_decision_has_no_reviewer_identity() {
+    use mathesis_provenance::model::{NewReviewDecision, ReviewOutcome};
+
+    let prov = ProvenanceStore::open_in_memory().unwrap();
+    let release = prov
+        .get_or_insert_release(&NewRelease { tag: "t".into(), git_commit: None, generated_at_unix: 0, notes: None })
+        .unwrap();
+    let source = prov
+        .get_or_insert_source_record(&NewSourceRecord {
+            provider: "test".into(), provider_id: "t".into(), provider_revision: None, retrieved_at_unix: None,
+            content_hash: None, licence: None, attribution: None, raw_payload_uri: None,
+            adapter_name: "test".into(), adapter_version: "0".into(), parser_version: None,
+        })
+        .unwrap();
+    let assertion_id = prov
+        .insert_assertion(&NewRelationAssertion {
+            subject_ref: "concept:a".into(),
+            predicate: RelationKind::Specializes,
+            object_ref: "concept:b".into(),
+            epistemic_state: EpistemicState::Reviewed, // Specializesはreviewed/verifiedでdefault_traversal
+            score: None, policy_version: None, created_by_run_id: None, supersedes_id: None,
+            release_id: release, legacy_ref: Some("r1".into()),
+        })
+        .unwrap();
+    prov.insert_evidence(&mathesis_provenance::model::NewEvidence {
+        assertion_id, source_record_id: source, locator: Some("a is a special case of b".into()),
+        evidence_kind: EvidenceKind::SourceSpan, extractor_or_model: None, version: None,
+        input_hash: None, output_hash: None, metric_name: None, metric_value: None,
+    })
+    .unwrap();
+    prov.insert_review_decision(&NewReviewDecision {
+        assertion_id, decision: ReviewOutcome::Accept,
+        reviewer_id: None, // 承認者不明のまま
+        scope: None, rationale: None, decided_at_unix: 0, dataset_version: None,
+    })
+    .unwrap();
+
+    let manifest = base_manifest(release.0);
+    let report = verify_release(
+        &prov,
+        &VerifyInputs {
+            manifest: &manifest,
+            judgments_provenance: &JudgmentsProvenanceExport { release_tag: "t".into(), release_git_commit: None, dependencies: vec![], citations: vec![], morphisms: vec![] },
+            relations_provenance: &empty_relations_sidecar(),
+            live_input_files: &[],
+        },
+    )
+    .unwrap();
+    assert!(
+        report.failures.iter().any(|f| f.check == "trusted_assertion_missing_qualifying_evidence"),
+        "reviewer_idの無いacceptはauthenticatedと認めないべき: {:?}",
+        report.failures
+    );
+}
+
+/// 上2件の裏返し: 正式な証拠、または本人確認済みレビューがあれば
+/// 既定トラバース対象は正当に通る——ゲートが正しい状態まで拒否しないことも確認する。
+#[test]
+fn accepts_default_traversal_assertions_with_qualifying_evidence() {
+    use mathesis_provenance::model::{EntityKind, NewEntity, NewReviewDecision, ReviewOutcome};
+
+    let prov = ProvenanceStore::open_in_memory().unwrap();
+    let release = prov
+        .get_or_insert_release(&NewRelease { tag: "t".into(), git_commit: None, generated_at_unix: 0, notes: None })
+        .unwrap();
+    let source = prov
+        .get_or_insert_source_record(&NewSourceRecord {
+            provider: "test".into(), provider_id: "t".into(), provider_revision: None, retrieved_at_unix: None,
+            content_hash: None, licence: None, attribution: None, raw_payload_uri: None,
+            adapter_name: "test".into(), adapter_version: "0".into(), parser_version: None,
+        })
+        .unwrap();
+
+    // 1件目: FormalExport証拠を持つobserved depends_on。
+    let formal = prov
+        .insert_assertion(&NewRelationAssertion {
+            subject_ref: "judgment:1".into(), predicate: RelationKind::DependsOn, object_ref: "judgment:2".into(),
+            epistemic_state: EpistemicState::Observed, score: None, policy_version: None, created_by_run_id: None,
+            supersedes_id: None, release_id: release, legacy_ref: Some("d1".into()),
+        })
+        .unwrap();
+    prov.insert_evidence(&mathesis_provenance::model::NewEvidence {
+        assertion_id: formal, source_record_id: source, locator: Some("Mod.a -> Mod.b".into()),
+        evidence_kind: EvidenceKind::FormalExport, extractor_or_model: None, version: None,
+        input_hash: None, output_hash: None, metric_name: None, metric_value: None,
+    })
+    .unwrap();
+
+    // 2件目: reviewer_id付きのacceptを持つreviewedな意味的関係。
+    prov.get_or_insert_entity(&NewEntity { kind: EntityKind::Concept, display_label: "a".into(), source_record_id: None }, "concept:a").unwrap();
+    prov.get_or_insert_entity(&NewEntity { kind: EntityKind::Concept, display_label: "b".into(), source_record_id: None }, "concept:b").unwrap();
+    let reviewed = prov
+        .insert_assertion(&NewRelationAssertion {
+            subject_ref: "concept:a".into(), predicate: RelationKind::Specializes, object_ref: "concept:b".into(),
+            epistemic_state: EpistemicState::Reviewed, score: None, policy_version: None, created_by_run_id: None,
+            supersedes_id: None, release_id: release, legacy_ref: Some("r1".into()),
+        })
+        .unwrap();
+    prov.insert_evidence(&mathesis_provenance::model::NewEvidence {
+        assertion_id: reviewed, source_record_id: source, locator: Some("a is a special case of b".into()),
+        evidence_kind: EvidenceKind::SourceSpan, extractor_or_model: None, version: None,
+        input_hash: None, output_hash: None, metric_name: None, metric_value: None,
+    })
+    .unwrap();
+    prov.insert_review_decision(&NewReviewDecision {
+        assertion_id: reviewed, decision: ReviewOutcome::Accept, reviewer_id: Some("alice@example.invalid".into()),
+        scope: None, rationale: Some("checked by hand".into()), decided_at_unix: 0, dataset_version: None,
+    })
+    .unwrap();
+
+    let manifest = base_manifest(release.0);
+    let report = verify_release(
+        &prov,
+        &VerifyInputs {
+            manifest: &manifest,
+            judgments_provenance: &base_judgments_sidecar(formal.0),
+            relations_provenance: &empty_relations_sidecar(),
+            live_input_files: &[],
+        },
+    )
+    .unwrap();
+    assert!(
+        !report.failures.iter().any(|f| f.check == "trusted_assertion_missing_qualifying_evidence"),
+        "正式な証拠/本人確認済みレビューがあるなら拒否されないべき: {:?}",
+        report.failures
+    );
+}

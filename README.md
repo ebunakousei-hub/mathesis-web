@@ -33,6 +33,14 @@ Lean/Coq の証明支援系や arXiv から数学的知識を構造化し、検�
   記録として採用——実データで表記ゆれにより孤立していた概念関係3件が
   可視化された。項目3(宣言的`RelationSchema`)は
   [docs/P5_PLAN.md](docs/P5_PLAN.md)のまま未着手）
+- **Phase 6: 本物のLean elaborator由来の信頼できる依存辺**:
+  [docs/P6_STATUS.md](docs/P6_STATUS.md)
+  （テキスト抽出ではなく`Lean.Expr.getUsedConstants`で型検査済みの証明項
+  から機械的に取り出した`depends_on`(`epistemic_state: observed`)。実際
+  にDeGiorgi論文の一部を`lake build`し、実データで680件を取り込み、
+  既存のテキスト抽出と突き合わせ(一致611・text-only 32・checker-only
+  69、両方とも実例で理由を確認済み)。「既定トラバース対象だけ」トグルが
+  初めて空でなくなった）
 
 このファイルはルート直下のクレート構成の見取り図。各クレートの詳細な
 設計判断は各 `src/lib.rs` 冒頭のドキュメントコメントを参照。

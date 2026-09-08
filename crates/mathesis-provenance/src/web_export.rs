@@ -38,10 +38,15 @@ pub struct DependencyEdge {
     /// P5, Item 1（`docs/P5_PLAN.md`）: `relation_policy::traversal_policy`の
     /// 文字列表現をそのまま辺へ持たせる——クライアントが既定トラバース対象を
     /// 判断するのに`assertions.json`（4MB超）をまるごと読み込まずに済む。
-    /// 実データでは今のところ全件`visible_only`（`depends_on`は`observed`
-    /// ではなく`extracted`——Lean elaboratorの正式exportではなく名前一致の
-    /// 抽出のため、`docs/P5_STATUS.md`参照）。
     pub traversal_policy: String,
+    /// Priority 2, step 1（ユーザー指示 2026-09-08）:
+    /// `"checker-derived"`(Lean elaboratorの実行結果、
+    /// `lean_manifest_adapter.rs`)か`"text-extracted"`
+    /// (`mathesis-importer`の識別子名一致)かを、`MorphismEdge.origin`と
+    /// 同じくEvidenceの`evidence_kind`から復元する——実データでは今のところ
+    /// ほぼ全件`text-extracted`(`depends_on`は基本`extracted`)だが、
+    /// Lean manifestを取り込んだ分だけ`checker-derived`(`observed`)になる。
+    pub origin: String,
 }
 
 /// `mathesis-graph::export::ExportedMorphism`と同じ4フィールド
@@ -122,11 +127,18 @@ pub fn build_dependency_edges(prov: &ProvenanceStore, assertions: &[RelationAsse
         let Some(object_entity_id) = a.object_entity_id else { continue };
         let Some(from) = prov.judgment_id_for_entity(subject_entity_id)? else { continue };
         let Some(to) = prov.judgment_id_for_entity(object_entity_id)? else { continue };
+        let evidence = evidence_details_for(prov, a.id)?;
+        let origin = if evidence.iter().any(|e| e.evidence_kind == "formal_export") {
+            "checker-derived"
+        } else {
+            "text-extracted"
+        };
         out.push(DependencyEdge {
             assertion_id: a.id.0,
             from,
             to,
             traversal_policy: traversal_policy(a.predicate, a.epistemic_state).as_str().to_string(),
+            origin: origin.to_string(),
         });
     }
     Ok(out)
@@ -362,6 +374,51 @@ mod tests {
         assert_eq!(deps[0].from, 5);
         assert_eq!(deps[0].to, 2);
         assert_eq!(deps[0].assertion_id, a.0);
+        assert_eq!(deps[0].origin, "text-extracted", "SourceSpan由来はtext-extracted");
+    }
+
+    /// Priority 2, step 1（ユーザー指示 2026-09-08）:
+    /// `lean_manifest_adapter`が作る`FormalExport`のEvidenceを持つ辺は
+    /// `"checker-derived"`と区別されるべき——同じ`depends_on`述語でも、
+    /// テキスト抽出とLean elaborator由来をクライアントが見分けられること。
+    #[test]
+    fn dependency_edge_origin_distinguishes_checker_derived_from_text_extracted() {
+        let (prov, release, source) = setup();
+        ensure_judgment(&prov, 1);
+        ensure_judgment(&prov, 2);
+        let a = prov
+            .insert_assertion(&NewRelationAssertion {
+                subject_ref: "judgment:1".into(),
+                predicate: RelationKind::DependsOn,
+                object_ref: "judgment:2".into(),
+                epistemic_state: EpistemicState::Observed,
+                score: None,
+                policy_version: None,
+                created_by_run_id: None,
+                supersedes_id: None,
+                release_id: release,
+                legacy_ref: Some("lean-manifest:1:2".into()),
+            })
+            .unwrap();
+        prov.insert_evidence(&NewEvidence {
+            assertion_id: a,
+            source_record_id: source,
+            locator: Some("Test.thm_a -> thm_b".into()),
+            evidence_kind: EvidenceKind::FormalExport,
+            extractor_or_model: Some("mathesis-provenance-lean-manifest-adapter".into()),
+            version: None,
+            input_hash: None,
+            output_hash: None,
+            metric_name: None,
+            metric_value: None,
+        })
+        .unwrap();
+
+        let assertions = prov.list_assertions_for_release(release).unwrap();
+        let deps = build_dependency_edges(&prov, &assertions).unwrap();
+        assert_eq!(deps.len(), 1);
+        assert_eq!(deps[0].origin, "checker-derived");
+        assert_eq!(deps[0].traversal_policy, "default_traversal", "observedなdepends_onは既定トラバース対象になるべき");
     }
 
     /// P5, Item 1（`docs/P5_PLAN.md`）: real dataの`depends_on`は今のところ

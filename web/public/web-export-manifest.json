@@ -4,23 +4,23 @@
   "releaseId": 1,
   "releaseGitCommit": "626500f8e2736719997fa8922b761e4d72d07730",
   "webExportVersion": "0.1.0",
-  "generatedAtUnix": 1788829788,
+  "generatedAtUnix": 1788832493,
   "counts": {
-    "dependencies": 5634,
+    "dependencies": 6314,
     "morphisms": 2284,
     "relations": 1051
   },
   "outputFiles": [
     {
-      "path": "scratch/web-export-p1check\\dependencies.json",
-      "sha256": "ab77cca6d52bff0f238ca11e56e45c2c9c73cdf96ae666869da4e78ac890a6bf"
+      "path": "web/public\\dependencies.json",
+      "sha256": "277a88408f6b083a5ba02a9e5eb15c82a579462be02a94fa195a2c93674219a6"
     },
     {
-      "path": "scratch/web-export-p1check\\morphisms.json",
+      "path": "web/public\\morphisms.json",
       "sha256": "102e874de7c141d5a8674e899a11135f41c35373be053c94097e0b09c7223638"
     },
     {
-      "path": "scratch/web-export-p1check\\relations.json",
+      "path": "web/public\\relations.json",
       "sha256": "12315d52f2c0b41132c45b1131626c6708bbfbbf1e74680503d06fac28feaf71"
     }
   ]

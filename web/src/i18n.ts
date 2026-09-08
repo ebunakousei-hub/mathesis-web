@@ -62,6 +62,11 @@ const DICT = {
   colHash: { ja: "ハッシュ", en: "hash" },
   colFields: { ja: "分野タグ", en: "field tags" },
   generatedAtLabel: { ja: "データ生成日", en: "Data generated" },
+  checkerDerivedLabel: { ja: "件がLean検査由来", en: "checker-derived" },
+  checkerDerivedHint: {
+    ja: "本文中の識別子の名前一致ではなく、Lean elaboratorが実際に型検査した証明項から機械的に取り出した依存関係。",
+    en: "Not name-matching in the source text — extracted mechanically from proof terms the Lean elaborator actually type-checked.",
+  },
   dynamicTaxonomyExplain: {
     ja: "arXivから実際に収集した論文を、抽出→embedding→クラスタリング→MSC2020とのalignmentまで通したパイプラインの出力です。MSC名は公式データが英語のみのため、分野名・クラスタ名は常に英語表記です。",
     en: "Live output of the pipeline (extract → embed → cluster → MSC2020 alignment) run on papers actually collected from arXiv. Field and cluster names stay in English, since the official MSC2020 vocabulary has no Japanese translation.",

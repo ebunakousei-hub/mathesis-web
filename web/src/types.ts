@@ -226,6 +226,12 @@ export interface ExportedGraphDependency {
    * （`docs/P5_STATUS.md`参照）。
    */
   traversalPolicy: "excluded" | "visible_only" | "default_traversal" | "formal_only";
+  /**
+   * Priority 2, step 1（ユーザー指示 2026-09-08）: `"checker-derived"`
+   * (Lean elaboratorの実行結果、`crates/mathesis-lean-extract`)か
+   * `"text-extracted"`(`mathesis-importer`の識別子名一致)か。
+   */
+  origin: "checker-derived" | "text-extracted";
 }
 
 export interface ExportedGraphPaper {

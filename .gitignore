@@ -17,3 +17,8 @@
 
 # Personal free-form design log, deliberately kept outside version control.
 /アーキテクチャ.txt
+
+# Lake build output for the vendored DeGiorgi fixture (Priority 2, step 1,
+# 2026-09-08) — compiled .olean cache + a full mathlib checkout, ~6.9GB.
+# Regenerable via `lake exe cache get` + `lake build`; never commit it.
+/fixtures/arxiv/DeGiorgi/.lake/

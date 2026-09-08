@@ -43,6 +43,18 @@ export class ProofGraphExplorer {
   private morphismsOf = new Map<number, ExportedMorphism[]>();
   /** P5, Item 1（`docs/P5_PLAN.md`）: `LineageGraph.dependencyPolicy`用。 */
   private dependencyPolicy = new Map<string, ExportedGraphDependency["traversalPolicy"]>();
+  /**
+   * Priority 2, step 3（ユーザー指示 2026-09-08）: Lean elaborator由来
+   * (`origin: "checker-derived"`)の依存辺の件数。`renderStats`で
+   * 「何件がテキスト抽出ではなく本物の検査結果か」を一言で見せる。
+   */
+  private checkerDerivedDependencyCount = 0;
+  /**
+   * `dependencies.json`から実際に読み込んだ辺の総数。`judgments.json`の
+   * `dependencyCount`はノード側exportが持つ別集計で、Lean manifestが
+   * 追加した辺を知らない(P2の境界そのもの)——表示にはこちらを使う。
+   */
+  private dependencyEdgeCount = 0;
   private searchIndex: ProofSearchIndex | null = null;
   /**
    * 系譜ビュー。判断1件を選んだときの主役——依存の鎖を図と概略の両方で出す。
@@ -139,6 +151,8 @@ export class ProofGraphExplorer {
       to.push(dep.from);
       this.usedBy.set(dep.to, to);
       this.dependencyPolicy.set(dependencyKey(dep.from, dep.to), dep.traversalPolicy);
+      this.dependencyEdgeCount += 1;
+      if (dep.origin === "checker-derived") this.checkerDerivedDependencyCount += 1;
     }
     for (const m of morphisms) {
       const srcList = this.morphismsOf.get(m.src) ?? [];
@@ -358,9 +372,14 @@ export class ProofGraphExplorer {
       const label = p.title ?? p.arxivId;
       return `<a href="https://arxiv.org/abs/${encodeURIComponent(p.arxivId)}" target="_blank" rel="noopener">${escapeHtml(label)}</a> (${p.judgmentCount})`;
     });
+    const checkerDerivedBit =
+      this.checkerDerivedDependencyCount > 0
+        ? ` · <span title="${escapeHtml(t("checkerDerivedHint"))}">${this.checkerDerivedDependencyCount.toLocaleString()} ${t("checkerDerivedLabel")}</span>`
+        : "";
     el.innerHTML =
-      `${d.judgmentCount.toLocaleString()} judgments · ${d.dependencyCount.toLocaleString()} dependency edges · ` +
+      `${d.judgmentCount.toLocaleString()} judgments · ${this.dependencyEdgeCount.toLocaleString()} dependency edges · ` +
       `${d.morphismCount.toLocaleString()} morphisms · ${t("generatedAtLabel")}: ${formatGeneratedAt(d.generatedAtUnix)}` +
+      checkerDerivedBit +
       (paperBits.length > 0 ? ` · ${t("sourcePaperLabel")}: ${paperBits.join(", ")}` : "");
     return el;
   }

@@ -146,6 +146,43 @@ fn verify_catalog_assertions(prov: &ProvenanceStore, release_id: i64, report: &m
     Ok(())
 }
 
+/// Priority 2, step 2（ユーザー指示 2026-09-08）: 「`default_traversal`の
+/// assertionは、正式な証拠(FormalExport evidence)か本人確認済みレビュー
+/// (reviewer_idを持つReviewDecision{accept})のどちらかを持たない限り
+/// 拒否する」というリリースゲート。`relation_policy::traversal_policy`が
+/// 既定トラバース対象と判定した時点で、それを裏付ける証拠が本当に
+/// あるかまでは検証していなかった——今後
+/// (a) 誰かが手違いで`epistemic_state`だけ`observed`/`verified`に
+///     書き換えたが証拠行はテキスト由来のまま、あるいは
+/// (b) レビューは記録されているがreviewer_idが無い(誰が承認したか
+///     分からない)まま`reviewed`に上げてしまった
+/// といった事態が起きても、リリースを公開する前に機械的に検出する。
+fn verify_trusted_assertions_have_qualifying_evidence(prov: &ProvenanceStore, release_id: i64, report: &mut VerifyReport) -> anyhow::Result<()> {
+    use crate::model::{EvidenceKind, ReviewOutcome};
+    use crate::relation_policy::{traversal_policy, TraversalPolicy};
+
+    for assertion in prov.list_assertions_for_release(crate::model::ReleaseId(release_id))? {
+        if traversal_policy(assertion.predicate, assertion.epistemic_state) != TraversalPolicy::DefaultTraversal {
+            continue;
+        }
+        let has_formal_evidence = prov.evidence_for(assertion.id)?.iter().any(|e| e.evidence_kind == EvidenceKind::FormalExport);
+        let has_authenticated_review = prov
+            .review_decisions_for(assertion.id)?
+            .iter()
+            .any(|r| r.decision == ReviewOutcome::Accept && r.reviewer_id.is_some());
+        if !has_formal_evidence && !has_authenticated_review {
+            report.fail(
+                "trusted_assertion_missing_qualifying_evidence",
+                format!(
+                    "assertion #{}: traversal_policy=default_traversal but has neither formal_export evidence nor an authenticated (reviewer_id-bearing) accept decision",
+                    assertion.id.0
+                ),
+            );
+        }
+    }
+    Ok(())
+}
+
 /// キーが同じなのに別々のassertion idを指すエントリが無いか確かめる
 /// （「重複した識別子キーが曖昧に解決される」の検査）。
 fn check_no_ambiguous_keys<K: std::hash::Hash + Eq + std::fmt::Debug + Clone>(
@@ -289,6 +326,13 @@ pub fn verify_release(prov: &ProvenanceStore, inputs: &VerifyInputs) -> anyhow::
 
     if let Err(e) = verify_catalog_assertions(prov, m.release_id, &mut report) {
         report.fail("catalog_query_error", e.to_string());
+    }
+
+    // 4.5. Priority 2, step 2: 既定トラバース対象を裏付ける証拠の有無
+    // （カタログの有無に関わらず常に検査する——正式なEvidence/認証済み
+    // レビューの有無はentity catalogと独立の話のため）。
+    if let Err(e) = verify_trusted_assertions_have_qualifying_evidence(prov, m.release_id, &mut report) {
+        report.fail("trusted_evidence_query_error", e.to_string());
     }
 
     // 5. 重複識別子キーの曖昧解決チェック。

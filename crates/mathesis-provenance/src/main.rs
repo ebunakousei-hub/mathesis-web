@@ -5,6 +5,7 @@ use anyhow::{Context, Result};
 use mathesis_graph::GraphStore;
 use mathesis_provenance::assertion_export::export_assertion_details;
 use mathesis_provenance::catalog_adapter::{build_concept_catalog, build_judgment_paper_catalog, catalog_metadata};
+use mathesis_provenance::lean_manifest_adapter;
 use mathesis_provenance::legacy_adapter::{import_graph, import_taxonomy_relations, ADAPTER_NAME, ADAPTER_VERSION};
 use mathesis_provenance::msc_adapter;
 use mathesis_provenance::openalex_adapter;
@@ -81,7 +82,15 @@ fn usage() -> ! {
          \x20     fetch-openalexが書いたスナップショットを証拠層へ写す\n\
          \x20     (Paper entity + Cites assertion, epistemic_state: observed)。\n\
          \x20     ネットワークに一切触れない、冪等な純粋インポート。\n\
-         \x20     --releaseはimport-legacyで既に作成済みのタグを指定する。"
+         \x20     --releaseはimport-legacyで既に作成済みのタグを指定する。\n\
+         \x20 import-lean-manifest --db <path> --graph-db <path> --release <tag>\n\
+         \x20                      --arxiv-id <id> --manifest <manifest.json>\n\
+         \x20     Priority 2, step 1: crates/mathesis-lean-extractが書き出した\n\
+         \x20     本物のLean elaborator依存マニフェストを取り込む\n\
+         \x20     (depends_on assertion, epistemic_state: observed,\n\
+         \x20     evidence_kind: formal_export)。既存のテキスト抽出\n\
+         \x20     (judgment_dependency:...)とは別のlegacy_ref名前空間を使う\n\
+         \x20     ので両方が共存する——置き換えではなく比較用の追加。"
     );
     std::process::exit(1);
 }
@@ -107,6 +116,7 @@ fn main() -> Result<()> {
         Some("import-msc") => run_import_msc(&args[2..]),
         Some("fetch-openalex") => run_fetch_openalex(&args[2..]),
         Some("import-openalex") => run_import_openalex(&args[2..]),
+        Some("import-lean-manifest") => run_import_lean_manifest(&args[2..]),
         _ => usage(),
     }
 }
@@ -233,6 +243,35 @@ fn run_import_openalex(args: &[String]) -> Result<()> {
         stats.references_outside_catalog,
     );
     openalex_adapter::citation_coverage(&prov)?.print();
+    Ok(())
+}
+
+/// Priority 2, step 1（ユーザー指示 2026-09-08）: `crates/mathesis-lean-extract`
+/// が書き出したLean elaborator由来の依存マニフェストを取り込む。
+/// `--graph-db`はjudgment名の解決専用——書き込みはしない。
+fn run_import_lean_manifest(args: &[String]) -> Result<()> {
+    let db = PathBuf::from(require_flag(args, "--db")?);
+    let graph_db = PathBuf::from(require_flag(args, "--graph-db")?);
+    let release_tag = require_flag(args, "--release")?.to_string();
+    let arxiv_id = require_flag(args, "--arxiv-id")?.to_string();
+    let manifest_path = PathBuf::from(require_flag(args, "--manifest")?);
+
+    let prov = ProvenanceStore::open(&db).with_context(|| format!("{db:?} を開けません"))?;
+    let graph = GraphStore::open(&graph_db).with_context(|| format!("{graph_db:?} を開けません"))?;
+    let release = prov
+        .get_release_by_tag(&release_tag)?
+        .with_context(|| format!("release '{release_tag}' not found — run import-legacy first"))?;
+    let raw = std::fs::read_to_string(&manifest_path).with_context(|| format!("{manifest_path:?} を開けません"))?;
+    let retrieved_at_unix = SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs() as i64).unwrap_or(0);
+
+    let stats = prov.transaction(|| {
+        lean_manifest_adapter::import_lean_manifest(&prov, &graph, release.id, &arxiv_id, &raw, retrieved_at_unix)
+    })?;
+    println!(
+        "Lean manifest ({arxiv_id}): dependencies +{} (skip {}), declarations unmatched {}, dependency targets unmatched {}",
+        stats.dependencies_imported, stats.dependencies_skipped_existing, stats.declarations_unmatched, stats.dependency_targets_unmatched,
+    );
+    lean_manifest_adapter::compare_dependency_sources(&prov, &graph, release.id, &arxiv_id, &raw)?.print();
     Ok(())
 }
 

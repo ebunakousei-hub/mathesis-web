@@ -25,7 +25,18 @@ use std::collections::HashMap;
 pub const ADAPTER_NAME: &str = "mathesis-provenance-lean-manifest-adapter";
 pub const ADAPTER_VERSION: &str = env!("CARGO_PKG_VERSION");
 
-/// `crates/mathesis-lean-extract`が書き出すJSONの形。
+/// P6.1（`docs/LEAN_DEPENDENCY_POLICY.md`）: `crates/mathesis-lean-extract/
+/// ExtractManifest.lean`の`filteringPolicyVersion`定数と手で同期させる
+/// 文字列（Lean側からRust側の定数を直接参照する手段が無いための制約、
+/// 同ドキュメント「Why the filter logic exists in two places」参照）。
+/// `verify.rs`のリリースゲートが、取り込み時にmanifestへ埋め込んだ値と
+/// この値の一致を検査する——フィルタの定義が変わったのに古いポリシーで
+/// 取り込んだ証拠のまま`default_traversal`へ上げてしまう事態を防ぐ。
+pub const FILTERING_POLICY_VERSION: &str = "mathesis-lean-dependency-filter-v1";
+
+/// `crates/mathesis-lean-extract`が書き出すJSONの形。P6.1
+/// （`docs/LEAN_DEPENDENCY_POLICY.md`）でスキーマを刷新——`dependsOn`の
+/// 生の文字列配列は無くなり、raw/published分離・origin付きの形になった。
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LeanManifest {
@@ -33,6 +44,8 @@ pub struct LeanManifest {
     pub lean_toolchain: String,
     pub mathlib_rev: String,
     pub entry_module: String,
+    pub extractor_version: String,
+    pub filtering_policy_version: String,
     /// Leanは壁時計時刻を素直に取る標準APIを使っていない——生成時刻は
     /// マニフェスト自身には無い。`import_lean_manifest`が取り込み時刻を
     /// 代わりに`SourceRecord.retrieved_at_unix`へ記録する(偽の生成時刻を
@@ -50,10 +63,24 @@ pub struct LeanDeclaration {
     /// evidence locator用）。
     pub qualified_name: String,
     pub module: String,
-    /// 型・値(証明項)が実際に参照している、同じLeanプロジェクト内の
-    /// 他の宣言のバレ名。Mathlib側の補題は含まない
-    /// （`crates/mathesis-lean-extract`側でフィルタ済み）。
-    pub depends_on: Vec<String>,
+    /// P6.1: 型検査済みの型・値が実際に参照した全定数(完全修飾名、フィルタ前)
+    /// ——自己参照・Mathlib・生成物・privateも含む、監査用の生信号。
+    /// `import_lean_manifest`はこれを判断のためにも使わない
+    /// (`published_dependencies`だけを取り込む)——`raw_manifest`自体を
+    /// `raw_payload_uri`で指せるようにしてあるので、DBへ複製しない。
+    #[allow(dead_code)]
+    pub raw_constants: Vec<String>,
+    /// P6.1: `docs/LEAN_DEPENDENCY_POLICY.md`のフィルタ済み、同じ
+    /// プロジェクト名前空間内・自己参照でない・生成/private詳細でない
+    /// 依存だけ。各要素に`origin`("type"|"body"|"both")付き。
+    pub published_dependencies: Vec<PublishedDependency>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PublishedDependency {
+    pub name: String,
+    pub origin: String,
 }
 
 #[derive(Debug, Default, Clone, Copy)]
@@ -71,12 +98,43 @@ fn legacy_ref(subject_id: i64, object_id: i64) -> String {
     format!("lean-manifest:{subject_id}:{object_id}")
 }
 
-fn manifest_hash(raw: &str) -> String {
+fn sha256_hex(bytes: &[u8]) -> String {
     let mut hasher = Sha256::new();
-    hasher.update(raw.as_bytes());
+    hasher.update(bytes);
     let digest = hasher.finalize();
     let hex: String = digest.iter().map(|b| format!("{b:02x}")).collect();
     format!("sha256:{hex}")
+}
+
+fn manifest_hash(raw: &str) -> String {
+    sha256_hex(raw.as_bytes())
+}
+
+/// P6.1「reproducibility metadata」（`docs/LEAN_DEPENDENCY_POLICY.md`）:
+/// `manifest_hash`(受け取った生バイト列そのもののハッシュ)とは別に、
+/// *パース後*のmanifestから宣言・依存・originだけを正規形に組み立てて
+/// ハッシュする——JSONの体裁(フィールド順・空白)が変わっても、実際の
+/// 依存関係グラフが変わらない限り同じ値になる。宣言・依存とも常に
+/// 完全修飾名/バレ名で整列済み(`ExtractManifest.lean`のbyte-stable出力
+/// 要件)なので、この文字列組み立て自体もmanifest内の順序に依存しない。
+fn normalized_manifest_hash(manifest: &LeanManifest) -> String {
+    let mut canonical = String::new();
+    let mut decls: Vec<&LeanDeclaration> = manifest.declarations.iter().collect();
+    decls.sort_by(|a, b| a.qualified_name.cmp(&b.qualified_name));
+    for decl in decls {
+        let mut deps: Vec<&PublishedDependency> = decl.published_dependencies.iter().collect();
+        deps.sort_by(|a, b| a.name.cmp(&b.name));
+        canonical.push_str(&decl.qualified_name);
+        canonical.push('|');
+        for dep in deps {
+            canonical.push_str(&dep.name);
+            canonical.push(':');
+            canonical.push_str(&dep.origin);
+            canonical.push(',');
+        }
+        canonical.push('\n');
+    }
+    sha256_hex(canonical.as_bytes())
 }
 
 /// 指定論文(arXiv id)が持つjudgmentだけを対象にバレ名→idを引く索引を作る。
@@ -102,6 +160,13 @@ fn judgment_name_index(graph: &GraphStore, arxiv_id: &str) -> anyhow::Result<Has
 /// マニフェスト(生JSON文字列、ハッシュ計算のため生のまま受け取る)を
 /// `depends_on`アサーション群として取り込む。呼び出し側が
 /// `import-legacy`済みのreleaseを渡す——このアダプタはreleaseを新設しない。
+///
+/// `manifest_path`は`SourceRecord.raw_payload_uri`へそのまま記録する
+/// (監査者が生マニフェスト——`rawConstants`を含む——を実際に開けるように)。
+/// `project_commit`はLean側が知りようがない情報なので(`docs/
+/// LEAN_DEPENDENCY_POLICY.md`「projectCommit is the only nullable...」)、
+/// `import-legacy --git-commit`と同じ流儀でCLI呼び出し元から渡す——無ければ
+/// 捏造せず`None`のまま。
 pub fn import_lean_manifest(
     prov: &ProvenanceStore,
     graph: &GraphStore,
@@ -109,17 +174,38 @@ pub fn import_lean_manifest(
     arxiv_id: &str,
     raw_manifest: &str,
     retrieved_at_unix: i64,
+    manifest_path: Option<&str>,
+    project_commit: Option<&str>,
 ) -> anyhow::Result<ImportStats> {
     let manifest: LeanManifest = serde_json::from_str(raw_manifest)?;
     let name_index = judgment_name_index(graph, arxiv_id)?;
-    let hash = manifest_hash(raw_manifest);
+    let raw_hash = manifest_hash(raw_manifest);
+    let normalized_hash = normalized_manifest_hash(&manifest);
+
+    let reproducibility_json = serde_json::json!({
+        "leanToolchain": manifest.lean_toolchain,
+        "mathlibRev": manifest.mathlib_rev,
+        "projectCommit": project_commit,
+        "extractorVersion": manifest.extractor_version,
+        "filteringPolicyVersion": manifest.filtering_policy_version,
+        "rawManifestHash": raw_hash,
+        "normalizedManifestHash": normalized_hash,
+    })
+    .to_string();
 
     let source_id = prov.get_or_insert_source_record(&NewSourceRecord {
         provider: "lean-elaborator".into(),
         provider_id: manifest.entry_module.clone(),
-        provider_revision: Some(hash.clone()),
+        // `raw_hash`を使う(トルーチェイン文字列固定にしない)——`source_record.rs`
+        // の設計判断(外部レビュー2026-09-05)そのままの理由: 同じ
+        // (provider, provider_id, provider_revision)キーは同じSourceRecordに
+        // 集約されるので、内容が変わったのにrevisionが変わらなければ
+        // 再取り込み時に古い`reproducibility_json`/`content_hash`が黙って
+        // 使い回されてしまう。マニフェストの中身が変わるたびに別行になる
+        // ことを保証するのは、この生ハッシュだけ。
+        provider_revision: Some(raw_hash.clone()),
         retrieved_at_unix: Some(retrieved_at_unix),
-        content_hash: Some(hash.clone()),
+        content_hash: Some(raw_hash.clone()),
         // 第三者データの再配布ではなく、このプロジェクト自身が実行して
         // 得たLean elaboratorの出力——ライセンス欄は「再配布ライセンス」の
         // 意味では該当なし(licensing.rsのゲートは外部ソース向け)。
@@ -128,10 +214,11 @@ pub fn import_lean_manifest(
             "{} (lean-toolchain {}, mathlib {})",
             manifest.project, manifest.lean_toolchain, manifest.mathlib_rev
         )),
-        raw_payload_uri: None,
+        raw_payload_uri: manifest_path.map(str::to_string),
         adapter_name: ADAPTER_NAME.into(),
         adapter_version: ADAPTER_VERSION.into(),
-        parser_version: Some("Lean.Expr.getUsedConstants".into()),
+        parser_version: Some(manifest.extractor_version.clone()),
+        reproducibility_json: Some(reproducibility_json),
     })?;
 
     let mut stats = ImportStats::default();
@@ -140,11 +227,8 @@ pub fn import_lean_manifest(
             stats.declarations_unmatched += 1;
             continue;
         };
-        for dep in &decl.depends_on {
-            if dep == &decl.name {
-                continue; // 自己参照(再帰定義)は依存として数えない——既存の規約と同じ
-            }
-            let Some(&object_id) = name_index.get(dep) else {
+        for dep in &decl.published_dependencies {
+            let Some(&object_id) = name_index.get(&dep.name) else {
                 stats.dependency_targets_unmatched += 1;
                 continue;
             };
@@ -168,14 +252,15 @@ pub fn import_lean_manifest(
             prov.insert_evidence(&NewEvidence {
                 assertion_id,
                 source_record_id: source_id,
-                locator: Some(format!("{} -> {}", decl.qualified_name, dep)),
+                locator: Some(format!("{} -> {}", decl.qualified_name, dep.name)),
                 evidence_kind: EvidenceKind::FormalExport,
                 extractor_or_model: Some(ADAPTER_NAME.into()),
                 version: Some(manifest.lean_toolchain.clone()),
-                input_hash: Some(hash.clone()),
+                input_hash: Some(raw_hash.clone()),
                 output_hash: None,
                 metric_name: None,
                 metric_value: None,
+                dependency_origin: Some(dep.origin.clone()),
             })?;
             stats.dependencies_imported += 1;
         }
@@ -315,15 +400,23 @@ mod tests {
             .0
     }
 
-    fn manifest_json(entries: &[(&str, &str, &[&str])]) -> String {
+    /// P6.1でスキーマが変わった(`dependsOn: [String]` →
+    /// `publishedDependencies: [{name, origin}]` + `rawConstants`)。
+    /// テストは依存を`(name, origin)`のペアで渡す——originを明示的に
+    /// 書かせることで、`import_lean_manifest`が実際にそれを
+    /// `Evidence.dependency_origin`まで運んでいることをテストできる。
+    fn manifest_json(entries: &[(&str, &str, &[(&str, &str)])]) -> String {
         let decls: Vec<_> = entries
             .iter()
             .map(|(name, qualified, deps)| {
+                let published: Vec<_> = deps.iter().map(|(dep_name, origin)| serde_json::json!({"name": dep_name, "origin": origin})).collect();
+                let raw: Vec<_> = deps.iter().map(|(dep_name, _)| *dep_name).collect();
                 serde_json::json!({
                     "name": name,
                     "qualifiedName": qualified,
                     "module": "Test.Module",
-                    "dependsOn": deps,
+                    "rawConstants": raw,
+                    "publishedDependencies": published,
                 })
             })
             .collect();
@@ -332,6 +425,8 @@ mod tests {
             "leanToolchain": "leanprover/lean4:v4.29.0-rc6",
             "mathlibRev": "abc123",
             "entryModule": "Test.Module",
+            "extractorVersion": "mathesis-lean-extract-v2",
+            "filteringPolicyVersion": FILTERING_POLICY_VERSION,
             "declarations": decls,
         })
         .to_string()
@@ -349,8 +444,9 @@ mod tests {
         prov.get_or_insert_entity(&NewEntity { kind: EntityKind::Judgment, display_label: "thm_a".into(), source_record_id: None }, &format!("judgment:{a}")).unwrap();
         prov.get_or_insert_entity(&NewEntity { kind: EntityKind::Judgment, display_label: "thm_b".into(), source_record_id: None }, &format!("judgment:{b}")).unwrap();
 
-        let raw = manifest_json(&[("thm_a", "Test.Module.thm_a", &["thm_b"]), ("thm_b", "Test.Module.thm_b", &[])]);
-        let stats = prov.transaction(|| import_lean_manifest(&prov, &graph, release, "test/0001", &raw, 0)).unwrap();
+        let raw = manifest_json(&[("thm_a", "Test.Module.thm_a", &[("thm_b", "body")]), ("thm_b", "Test.Module.thm_b", &[])]);
+        let stats =
+            prov.transaction(|| import_lean_manifest(&prov, &graph, release, "test/0001", &raw, 0, Some("scratch/manifest.json"), Some("deadbeef"))).unwrap();
         assert_eq!(stats.dependencies_imported, 1);
         assert_eq!(stats.declarations_unmatched, 0);
         assert_eq!(stats.dependency_targets_unmatched, 0);
@@ -364,6 +460,15 @@ mod tests {
         let evidence = prov.evidence_for(assertion_id).unwrap();
         assert_eq!(evidence.len(), 1);
         assert_eq!(evidence[0].evidence_kind, EvidenceKind::FormalExport, "テキスト抽出のsource_spanとは区別する");
+        assert_eq!(evidence[0].dependency_origin.as_deref(), Some("body"), "P6.1: origin(type/body/both)がEvidenceまで運ばれる");
+
+        let source = prov.get_source_record(evidence[0].source_record_id).unwrap();
+        assert_eq!(source.raw_payload_uri.as_deref(), Some("scratch/manifest.json"), "監査用に生マニフェストの場所を記録する");
+        let repro: serde_json::Value = serde_json::from_str(source.reproducibility_json.as_deref().unwrap()).unwrap();
+        assert_eq!(repro["projectCommit"], "deadbeef");
+        assert_eq!(repro["filteringPolicyVersion"], FILTERING_POLICY_VERSION);
+        assert!(repro["rawManifestHash"].as_str().unwrap().starts_with("sha256:"));
+        assert!(repro["normalizedManifestHash"].as_str().unwrap().starts_with("sha256:"));
     }
 
     #[test]
@@ -379,9 +484,9 @@ mod tests {
         prov.get_or_insert_entity(&NewEntity { kind: EntityKind::Judgment, display_label: "thm_a".into(), source_record_id: None }, &format!("judgment:{a}")).unwrap();
         prov.get_or_insert_entity(&NewEntity { kind: EntityKind::Judgment, display_label: "thm_b".into(), source_record_id: None }, &format!("judgment:{b}")).unwrap();
 
-        let raw = manifest_json(&[("thm_a", "Test.Module.thm_a", &["thm_b"])]);
-        let first = prov.transaction(|| import_lean_manifest(&prov, &graph, release, "test/0002", &raw, 0)).unwrap();
-        let second = prov.transaction(|| import_lean_manifest(&prov, &graph, release, "test/0002", &raw, 0)).unwrap();
+        let raw = manifest_json(&[("thm_a", "Test.Module.thm_a", &[("thm_b", "body")])]);
+        let first = prov.transaction(|| import_lean_manifest(&prov, &graph, release, "test/0002", &raw, 0, None, None)).unwrap();
+        let second = prov.transaction(|| import_lean_manifest(&prov, &graph, release, "test/0002", &raw, 0, None, None)).unwrap();
         assert_eq!(first.dependencies_imported, 1);
         assert_eq!(second.dependencies_imported, 0);
         assert_eq!(second.dependencies_skipped_existing, 1);
@@ -401,8 +506,8 @@ mod tests {
 
         // "thm_b"はmathesis-graph側に存在しない(例えばsorryや自動生成された
         // 補助補題で、テキスト抽出側のjudgmentノードには無い)想定。
-        let raw = manifest_json(&[("thm_a", "Test.Module.thm_a", &["thm_b"])]);
-        let stats = prov.transaction(|| import_lean_manifest(&prov, &graph, release, "test/0003", &raw, 0)).unwrap();
+        let raw = manifest_json(&[("thm_a", "Test.Module.thm_a", &[("thm_b", "body")])]);
+        let stats = prov.transaction(|| import_lean_manifest(&prov, &graph, release, "test/0003", &raw, 0, None, None)).unwrap();
         assert_eq!(stats.dependencies_imported, 0);
         assert_eq!(stats.dependency_targets_unmatched, 1);
         assert_eq!(prov.assertion_count().unwrap(), 0, "存在しない依存先をでっち上げない");
@@ -420,7 +525,7 @@ mod tests {
         let release = prov.get_or_insert_release(&NewRelease { tag: "t".into(), git_commit: None, generated_at_unix: 0, notes: None }).unwrap();
 
         let raw = manifest_json(&[("dup_name", "Test.Module.dup_name", &[])]);
-        let stats = prov.transaction(|| import_lean_manifest(&prov, &graph, release, "test/0004", &raw, 0)).unwrap();
+        let stats = prov.transaction(|| import_lean_manifest(&prov, &graph, release, "test/0004", &raw, 0, None, None)).unwrap();
         assert_eq!(stats.declarations_unmatched, 1, "曖昧な同名は解決せず未マッチとして数える");
         assert_eq!(prov.assertion_count().unwrap(), 0);
     }
@@ -447,6 +552,7 @@ mod tests {
                 provider: "test".into(), provider_id: "t".into(), provider_revision: None, retrieved_at_unix: None,
                 content_hash: None, licence: None, attribution: None, raw_payload_uri: None,
                 adapter_name: "test".into(), adapter_version: "0".into(), parser_version: None,
+                reproducibility_json: None,
             })
             .unwrap();
         let insert_extracted = |subject: i64, object: i64, lref: &str| {
@@ -463,6 +569,7 @@ mod tests {
             prov.insert_evidence(&NewEvidence {
                 assertion_id, source_record_id: source, locator: None, evidence_kind: EvidenceKind::SourceSpan,
                 extractor_or_model: None, version: None, input_hash: None, output_hash: None, metric_name: None, metric_value: None,
+                dependency_origin: None,
             })
             .unwrap();
         };
@@ -472,8 +579,8 @@ mod tests {
         // 見ていない宣言——比較から除外されるべき。
         insert_extracted(outside, a, "judgment_dependency:outside:a");
 
-        let raw = manifest_json(&[("thm_a", "Test.Module.thm_a", &["thm_b"]), ("thm_b", "Test.Module.thm_b", &[])]);
-        prov.transaction(|| import_lean_manifest(&prov, &graph, release, "test/0005", &raw, 0)).unwrap();
+        let raw = manifest_json(&[("thm_a", "Test.Module.thm_a", &[("thm_b", "body")]), ("thm_b", "Test.Module.thm_b", &[])]);
+        prov.transaction(|| import_lean_manifest(&prov, &graph, release, "test/0005", &raw, 0, None, None)).unwrap();
 
         let report = compare_dependency_sources(&prov, &graph, release, "test/0005", &raw).unwrap();
         assert_eq!(report.agree, 1, "thm_a -> thm_bは両方が同意");

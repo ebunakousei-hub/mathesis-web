@@ -286,6 +286,12 @@ pub struct NewSourceRecord {
     pub adapter_name: String,
     pub adapter_version: String,
     pub parser_version: Option<String>,
+    /// P6.1（`docs/LEAN_DEPENDENCY_POLICY.md`）: `evidence_kind:
+    /// formal_export`のソースだけが埋める、小さなJSON blob
+    /// (`leanToolchain`/`mathlibRev`/`projectCommit`/`extractorVersion`/
+    /// `filteringPolicyVersion`/`rawManifestHash`/`normalizedManifestHash`)。
+    /// それ以外のアダプタは`None`のまま——無い再現性情報を捏造しない。
+    pub reproducibility_json: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -302,6 +308,7 @@ pub struct SourceRecord {
     pub adapter_name: String,
     pub adapter_version: String,
     pub parser_version: Option<String>,
+    pub reproducibility_json: Option<String>,
 }
 
 /// ARCHITECTURE_NEXT.md §5.3。`subject_ref`/`object_ref`は本来`subject_id`/
@@ -366,6 +373,13 @@ pub struct NewEvidence {
     pub output_hash: Option<String>,
     pub metric_name: Option<String>,
     pub metric_value: Option<f64>,
+    /// P6.1（`docs/LEAN_DEPENDENCY_POLICY.md`）: `"type"`/`"body"`/`"both"`
+    /// ——このdepends_on辺が、対象宣言の型・値(証明項)のどちらから
+    /// 見つかったか。`evidence_kind: formal_export`だけが埋める
+    /// (それ以外のevidence種別には意味を持たないフィールドなので
+    /// `None`のまま——専用enumは1種別にしか使わない3値のために
+    /// 導入しない)。
+    pub dependency_origin: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -381,6 +395,7 @@ pub struct Evidence {
     pub output_hash: Option<String>,
     pub metric_name: Option<String>,
     pub metric_value: Option<f64>,
+    pub dependency_origin: Option<String>,
 }
 
 #[derive(Debug, Clone)]

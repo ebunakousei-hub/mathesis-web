@@ -22,3 +22,8 @@
 # 2026-09-08) — compiled .olean cache + a full mathlib checkout, ~6.9GB.
 # Regenerable via `lake exe cache get` + `lake build`; never commit it.
 /fixtures/arxiv/DeGiorgi/.lake/
+
+# Same reason, for P6.1's standalone adversarial-fixture Lake project
+# (2026-09-08) — small (no Mathlib dependency) but still regenerable
+# build output, not source.
+/crates/mathesis-lean-extract/fixtures/.lake/

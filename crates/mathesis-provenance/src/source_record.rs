@@ -33,8 +33,9 @@ impl ProvenanceStore {
             .prepare_cached(
                 "INSERT INTO source_records
                     (provider, provider_id, provider_revision, retrieved_at_unix, content_hash,
-                     licence, attribution, raw_payload_uri, adapter_name, adapter_version, parser_version)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+                     licence, attribution, raw_payload_uri, adapter_name, adapter_version, parser_version,
+                     reproducibility_json)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
             )?
             .execute(params![
                 new.provider,
@@ -48,6 +49,7 @@ impl ProvenanceStore {
                 new.adapter_name,
                 new.adapter_version,
                 new.parser_version,
+                new.reproducibility_json,
             ])?;
         Ok(SourceRecordId(self.conn.last_insert_rowid()))
     }
@@ -56,7 +58,8 @@ impl ProvenanceStore {
         self.conn
             .prepare_cached(
                 "SELECT id, provider, provider_id, provider_revision, retrieved_at_unix, content_hash,
-                        licence, attribution, raw_payload_uri, adapter_name, adapter_version, parser_version
+                        licence, attribution, raw_payload_uri, adapter_name, adapter_version, parser_version,
+                        reproducibility_json
                  FROM source_records WHERE id = ?1",
             )?
             .query_row(params![id.0], Self::source_record_row)
@@ -67,7 +70,8 @@ impl ProvenanceStore {
         self.conn
             .prepare_cached(
                 "SELECT id, provider, provider_id, provider_revision, retrieved_at_unix, content_hash,
-                        licence, attribution, raw_payload_uri, adapter_name, adapter_version, parser_version
+                        licence, attribution, raw_payload_uri, adapter_name, adapter_version, parser_version,
+                        reproducibility_json
                  FROM source_records WHERE id = ?1",
             )?
             .query_row(params![id.0], Self::source_record_row)
@@ -92,6 +96,7 @@ impl ProvenanceStore {
             adapter_name: row.get(9)?,
             adapter_version: row.get(10)?,
             parser_version: row.get(11)?,
+            reproducibility_json: row.get(12)?,
         })
     }
 }

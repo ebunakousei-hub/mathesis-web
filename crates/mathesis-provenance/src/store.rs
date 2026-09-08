@@ -151,6 +151,7 @@ impl ProvenanceStore {
         conn.execute_batch("PRAGMA foreign_keys = ON;")?;
         conn.execute_batch(SCHEMA)?;
         Self::ensure_assertion_entity_columns(&conn)?;
+        Self::ensure_p6_1_columns(&conn)?;
         Ok(ProvenanceStore { conn })
     }
 
@@ -172,11 +173,35 @@ impl ProvenanceStore {
         Ok(())
     }
 
+    /// P6.1（`docs/LEAN_DEPENDENCY_POLICY.md`）: `ensure_assertion_entity_columns`と
+    /// 同じ「追加のみ・冪等ALTER」パターン。`evidence.dependency_origin`
+    /// (type/body/both)と`source_records.reproducibility_json`
+    /// (Lean/mathlib版・抽出器版・フィルタポリシー版・raw/normalizedハッシュの
+    /// 小さなJSON blob)を追加する。
+    fn ensure_p6_1_columns(conn: &Connection) -> Result<()> {
+        let evidence_columns: std::collections::HashSet<String> = conn
+            .prepare("PRAGMA table_info(evidence)")?
+            .query_map([], |row| row.get::<_, String>(1))?
+            .collect::<rusqlite::Result<_>>()?;
+        if !evidence_columns.contains("dependency_origin") {
+            conn.execute("ALTER TABLE evidence ADD COLUMN dependency_origin TEXT", [])?;
+        }
+        let source_record_columns: std::collections::HashSet<String> = conn
+            .prepare("PRAGMA table_info(source_records)")?
+            .query_map([], |row| row.get::<_, String>(1))?
+            .collect::<rusqlite::Result<_>>()?;
+        if !source_record_columns.contains("reproducibility_json") {
+            conn.execute("ALTER TABLE source_records ADD COLUMN reproducibility_json TEXT", [])?;
+        }
+        Ok(())
+    }
+
     pub fn open_in_memory() -> Result<Self> {
         let conn = Connection::open_in_memory()?;
         conn.execute_batch("PRAGMA foreign_keys = ON;")?;
         conn.execute_batch(SCHEMA)?;
         Self::ensure_assertion_entity_columns(&conn)?;
+        Self::ensure_p6_1_columns(&conn)?;
         Ok(ProvenanceStore { conn })
     }
 

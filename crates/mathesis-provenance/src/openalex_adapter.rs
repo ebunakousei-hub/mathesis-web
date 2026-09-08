@@ -82,6 +82,7 @@ pub fn import(prov: &ProvenanceStore, release: ReleaseId, snapshot: &[SnapshotEn
             adapter_name: ADAPTER_NAME.into(),
             adapter_version: ADAPTER_VERSION.into(),
             parser_version: Some("mathesis-provenance::openalex_fetch".into()),
+            reproducibility_json: None,
         })?;
 
         let paper_ref = format!("paper:{}", entry.arxiv_id);
@@ -147,6 +148,7 @@ pub fn import(prov: &ProvenanceStore, release: ReleaseId, snapshot: &[SnapshotEn
                 output_hash: None,
                 metric_name: None,
                 metric_value: None,
+                dependency_origin: None,
             })?;
             stats.citations_imported += 1;
         }

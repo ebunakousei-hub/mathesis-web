@@ -8,8 +8,8 @@ impl ProvenanceStore {
             .prepare_cached(
                 "INSERT INTO evidence
                     (assertion_id, source_record_id, locator, evidence_kind, extractor_or_model,
-                     version, input_hash, output_hash, metric_name, metric_value)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+                     version, input_hash, output_hash, metric_name, metric_value, dependency_origin)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
             )?
             .execute(params![
                 new.assertion_id.0,
@@ -22,6 +22,7 @@ impl ProvenanceStore {
                 new.output_hash,
                 new.metric_name,
                 new.metric_value,
+                new.dependency_origin,
             ])?;
         Ok(EvidenceId(self.conn.last_insert_rowid()))
     }
@@ -29,7 +30,7 @@ impl ProvenanceStore {
     pub fn evidence_for(&self, assertion: AssertionId) -> Result<Vec<Evidence>> {
         let mut stmt = self.conn.prepare_cached(
             "SELECT id, assertion_id, source_record_id, locator, evidence_kind, extractor_or_model,
-                    version, input_hash, output_hash, metric_name, metric_value
+                    version, input_hash, output_hash, metric_name, metric_value, dependency_origin
              FROM evidence WHERE assertion_id = ?1 ORDER BY id",
         )?;
         let rows = stmt
@@ -70,6 +71,7 @@ impl ProvenanceStore {
             output_hash: row.get(8)?,
             metric_name: row.get(9)?,
             metric_value: row.get(10)?,
+            dependency_origin: row.get(11)?,
         })
     }
 }

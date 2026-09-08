@@ -40,6 +40,7 @@ fn seed_store() -> (ProvenanceStore, String, i64) {
             adapter_name: "test".into(),
             adapter_version: "0".into(),
             parser_version: None,
+            reproducibility_json: None,
         })
         .unwrap();
 
@@ -84,6 +85,7 @@ fn seed_store() -> (ProvenanceStore, String, i64) {
         output_hash: None,
         metric_name: None,
         metric_value: None,
+        dependency_origin: None,
     })
     .unwrap();
 
@@ -112,6 +114,7 @@ fn seed_store() -> (ProvenanceStore, String, i64) {
         output_hash: None,
         metric_name: None,
         metric_value: None,
+        dependency_origin: None,
     })
     .unwrap();
 
@@ -140,6 +143,7 @@ fn seed_store() -> (ProvenanceStore, String, i64) {
         output_hash: None,
         metric_name: None,
         metric_value: None,
+        dependency_origin: None,
     })
     .unwrap();
 
@@ -236,6 +240,7 @@ fn detects_stale_export_after_the_store_changes() {
             adapter_name: "test".into(),
             adapter_version: "0".into(),
             parser_version: None,
+            reproducibility_json: None,
         })
         .unwrap();
     let new_morphism = prov
@@ -263,6 +268,7 @@ fn detects_stale_export_after_the_store_changes() {
         output_hash: None,
         metric_name: None,
         metric_value: None,
+        dependency_origin: None,
     })
     .unwrap();
 

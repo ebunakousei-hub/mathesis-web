@@ -48,6 +48,7 @@ pub fn import(prov: &ProvenanceStore, release: ReleaseId) -> anyhow::Result<Impo
         adapter_name: ADAPTER_NAME.into(),
         adapter_version: ADAPTER_VERSION.into(),
         parser_version: Some("mathesis-msc::official-csv".into()),
+        reproducibility_json: None,
     })?;
 
     let mut stats = ImportStats::default();
@@ -98,6 +99,7 @@ pub fn import(prov: &ProvenanceStore, release: ReleaseId) -> anyhow::Result<Impo
             output_hash: None,
             metric_name: None,
             metric_value: None,
+            dependency_origin: None,
         })?;
         stats.relations_imported += 1;
     }

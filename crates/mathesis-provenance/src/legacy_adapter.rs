@@ -67,6 +67,7 @@ fn get_or_insert_snapshot_source(prov: &ProvenanceStore, release_tag: &str) -> a
         adapter_name: ADAPTER_NAME.into(),
         adapter_version: ADAPTER_VERSION.into(),
         parser_version: None,
+        reproducibility_json: None,
     })?)
 }
 
@@ -83,6 +84,7 @@ fn get_or_insert_arxiv_source(prov: &ProvenanceStore, arxiv_id: &str) -> anyhow:
         adapter_name: ADAPTER_NAME.into(),
         adapter_version: ADAPTER_VERSION.into(),
         parser_version: None,
+        reproducibility_json: None,
     })?)
 }
 
@@ -144,6 +146,7 @@ pub fn import_graph(
                 output_hash: None,
                 metric_name: None,
                 metric_value: None,
+                dependency_origin: None,
             })?;
             stats.dependencies_imported += 1;
         }
@@ -190,6 +193,7 @@ pub fn import_graph(
                 output_hash: None,
                 metric_name: None,
                 metric_value: None,
+                dependency_origin: None,
             })?;
             stats.citations_imported += 1;
         }
@@ -252,6 +256,7 @@ pub fn import_graph(
             output_hash: None,
             metric_name: None,
             metric_value: None,
+            dependency_origin: None,
         })?;
         stats.morphisms_imported += 1;
 
@@ -337,6 +342,7 @@ pub fn import_taxonomy_relations(
                 output_hash: None,
                 metric_name: None,
                 metric_value: None,
+                dependency_origin: None,
             })?;
         }
 
@@ -357,6 +363,7 @@ pub fn import_taxonomy_relations(
                 output_hash: None,
                 metric_name: Some("invCL".into()),
                 metric_value: Some(edge.confidence as f64),
+                dependency_origin: None,
             })?;
         }
 

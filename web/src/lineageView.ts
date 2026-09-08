@@ -2,6 +2,7 @@ import { t, type TKey } from "./i18n";
 import {
   buildLineage,
   DEFAULT_LINEAGE_OPTIONS,
+  dependencyKey,
   NODE_H,
   NODE_W,
   spineOutline,
@@ -512,8 +513,12 @@ export class LineageView {
     `;
     box.appendChild(meta);
 
-    box.appendChild(this.renderRelationRow(t("dependsOnLabel"), traversableChildren(this.graph, id, this.opts)));
-    box.appendChild(this.renderRelationRow(t("usedByLabel"), traversableUsedBy(this.graph, id, this.opts)));
+    box.appendChild(
+      this.renderRelationRow(t("dependsOnLabel"), traversableChildren(this.graph, id, this.opts), (other) => dependencyKey(id, other)),
+    );
+    box.appendChild(
+      this.renderRelationRow(t("usedByLabel"), traversableUsedBy(this.graph, id, this.opts), (other) => dependencyKey(other, id)),
+    );
     box.appendChild(this.renderMorphisms(id));
 
     const toConcepts = document.createElement("button");
@@ -526,12 +531,17 @@ export class LineageView {
     return box;
   }
 
-  private renderRelationRow(label: string, ids: number[]): HTMLElement {
+  /**
+   * `keyFor`: この行の各要素について`LineageGraph.dependencyKey`を作る
+   * 関数——`dependsOn`行と`usedBy`行とで(from,to)の向きが逆なので、
+   * 呼び出し元(`renderDetail`)がどちらの向きか知っている。P6.1
+   * （`docs/LEAN_DEPENDENCY_POLICY.md`）: このキーで
+   * `dependencyAssertionId`/`dependencyOrigin`を引き、チップに由来バッジと
+   * 詳細ボタンを付ける。
+   */
+  private renderRelationRow(label: string, ids: number[], keyFor: (other: number) => string): HTMLElement {
     const row = document.createElement("div");
     row.className = "lin-detail-row";
-    // 依存関係は識別子の名前一致で機械的に検出したもの（証明項上の
-    // 最小依存であることや意味上の依存であることは未確認）——バッジまでは
-    // 出さないが、ラベルにホバーすれば分かるようにしておく。
     row.innerHTML = `<span class="lin-detail-label" title="${escapeHtml(t("dependencyInferredHint"))}">${escapeHtml(label)} (${ids.length})</span>`;
     if (ids.length === 0) {
       const empty = document.createElement("span");
@@ -542,7 +552,11 @@ export class LineageView {
     }
     for (const other of ids.slice(0, 12)) {
       const j = this.graph.judgmentById.get(other);
-      if (j !== undefined) row.appendChild(this.chip(j));
+      if (j === undefined) continue;
+      const key = keyFor(other);
+      const assertionId = this.graph.dependencyAssertionId.get(key);
+      const origin = this.graph.dependencyOrigin.get(key);
+      row.appendChild(this.chip(j, assertionId !== undefined && origin !== undefined ? { assertionId, origin } : undefined));
     }
     if (ids.length > 12) {
       const more = document.createElement("span");
@@ -611,13 +625,39 @@ export class LineageView {
     return row;
   }
 
-  private chip(j: ExportedJudgment): HTMLElement {
+  /**
+   * `provenance`: P6.1（`docs/LEAN_DEPENDENCY_POLICY.md`）。渡されれば
+   * このチップは根拠(`assertions.json`)の存在を示す由来バッジを持ち、
+   * `origin === "checker-derived"`のときだけ短いラベルも添える
+   * （text-extractedは既にこのサイトの大半を占める既定なので、毎回は
+   * 目立たせない——射のチップが"未承認"のときだけステータスを出す
+   * のと同じ「例外だけ可視化する」方針）。バッジのクリックだけが
+   * `showAssertionDetail`を開き、チップ本体のクリックは既存どおり
+   * 再rootする——射のチップの`.lin-chip-provenance`と同じ分離。
+   */
+  private chip(j: ExportedJudgment, provenance?: { assertionId: number; origin: "checker-derived" | "text-extracted" }): HTMLElement {
     const chip = document.createElement("button");
     chip.type = "button";
     chip.className = `lin-chip is-${j.kind}`;
-    chip.textContent = j.name ?? `#${j.id}`;
     chip.title = unwrapLeanSymbols(j.statement);
-    chip.onclick = () => {
+    if (provenance === undefined) {
+      chip.textContent = j.name ?? `#${j.id}`;
+    } else {
+      const originBadge =
+        provenance.origin === "checker-derived"
+          ? `<span class="lin-chip-origin is-checker-derived">${escapeHtml(t("dependencyOriginCheckerBadge"))}</span>`
+          : "";
+      const provenanceBadge = `<span class="lin-chip-provenance" title="${escapeHtml(t("dependencyOriginDetailHint"))}" data-assertion-id="${provenance.assertionId}">ⓘ</span>`;
+      chip.innerHTML = `${escapeHtml(j.name ?? `#${j.id}`)}${originBadge}${provenanceBadge}`;
+    }
+    chip.onclick = (ev) => {
+      const target = ev.target as HTMLElement;
+      const provEl = target.closest<HTMLElement>(".lin-chip-provenance");
+      if (provEl) {
+        ev.stopPropagation();
+        void showAssertionDetail(Number(provEl.dataset.assertionId));
+        return;
+      }
       this.selected = j.id;
       this.render();
     };

@@ -48,14 +48,36 @@ function ensureDialog(): HTMLDialogElement {
   return dialogEl;
 }
 
+/**
+ * P6.1（`docs/LEAN_DEPENDENCY_POLICY.md`）: `origin`("type"|"body"|"both")の
+ * 短い説明——「対象宣言の型・値(証明項)のどちらに、この依存の参照が
+ * 実際に現れたか」。
+ */
+const DEPENDENCY_ORIGIN_LABEL: Record<string, string> = {
+  type: "in the declaration's type",
+  body: "in the declaration's value (proof term)",
+  both: "in both the declaration's type and value",
+};
+
 function renderEvidence(e: AssertionDetail["evidence"][number]): string {
   const metric = e.metricName !== null && e.metricValue !== null ? `${escapeHtml(e.metricName)} = ${e.metricValue.toFixed(4)}` : null;
+  const isFormalExport = e.evidenceKind === "formal_export";
+  const originLabel = e.dependencyOrigin ? DEPENDENCY_ORIGIN_LABEL[e.dependencyOrigin] ?? e.dependencyOrigin : null;
   return `
     <li class="prov-evidence-item">
       <div class="prov-evidence-kind">${escapeHtml(e.evidenceKind)}${e.extractorOrModel ? ` · ${escapeHtml(e.extractorOrModel)}` : ""}</div>
       ${e.locator ? `<div class="prov-evidence-locator">"${escapeHtml(e.locator)}"</div>` : `<div class="prov-evidence-locator prov-muted">(no source span retained)</div>`}
       ${metric ? `<div class="prov-evidence-metric">${metric}</div>` : ""}
       <div class="prov-evidence-source">source: ${escapeHtml(e.sourceProvider)}:${escapeHtml(e.sourceProviderId)}</div>
+      ${
+        isFormalExport
+          ? `<div class="prov-evidence-formal">
+              <div class="prov-muted">Checker-derived dependency${originLabel ? ` — found ${escapeHtml(originLabel)}` : ""}.</div>
+              ${e.formalRevision ? `<div class="prov-muted">${escapeHtml(e.formalRevision)}</div>` : ""}
+              <div class="prov-muted">This means the elaborated declaration's type-checked term contains this constant — not that it is a minimal mathematical dependency (a proof may cite more than it strictly needs).</div>
+            </div>`
+          : ""
+      }
     </li>`;
 }
 

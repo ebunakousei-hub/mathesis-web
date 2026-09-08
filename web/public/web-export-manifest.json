@@ -4,16 +4,16 @@
   "releaseId": 1,
   "releaseGitCommit": "626500f8e2736719997fa8922b761e4d72d07730",
   "webExportVersion": "0.1.0",
-  "generatedAtUnix": 1788832493,
+  "generatedAtUnix": 1788842767,
   "counts": {
-    "dependencies": 6314,
+    "dependencies": 6185,
     "morphisms": 2284,
     "relations": 1051
   },
   "outputFiles": [
     {
       "path": "web/public\\dependencies.json",
-      "sha256": "277a88408f6b083a5ba02a9e5eb15c82a579462be02a94fa195a2c93674219a6"
+      "sha256": "b9917ee29e788e505d967071ec16b91cebc5784db481ea85ad3b2354b95e79b5"
     },
     {
       "path": "web/public\\morphisms.json",

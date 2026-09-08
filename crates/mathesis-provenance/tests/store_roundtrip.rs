@@ -100,6 +100,7 @@ fn source_record_is_interned_by_provider_and_provider_id() {
         adapter_name: "test".into(),
         adapter_version: "0".into(),
         parser_version: None,
+        reproducibility_json: None,
     };
     let a = store.get_or_insert_source_record(&new).unwrap();
     let b = store.get_or_insert_source_record(&new).unwrap();
@@ -128,6 +129,7 @@ fn source_record_with_same_revision_is_interned_to_the_same_record() {
         adapter_name: "test".into(),
         adapter_version: "0".into(),
         parser_version: None,
+        reproducibility_json: None,
     };
     let a = store.get_or_insert_source_record(&new).unwrap();
     let b = store.get_or_insert_source_record(&new).unwrap();
@@ -150,6 +152,7 @@ fn source_record_with_a_different_revision_is_a_different_record() {
         adapter_name: "test".into(),
         adapter_version: "0".into(),
         parser_version: None,
+        reproducibility_json: None,
     };
     let v1 = store.get_or_insert_source_record(&base).unwrap();
     let v2 = store.get_or_insert_source_record(&NewSourceRecord { provider_revision: Some("v2".into()), ..base }).unwrap();
@@ -176,6 +179,7 @@ fn assertion_evidence_and_review_round_trip() {
             adapter_name: "test".into(),
             adapter_version: "0".into(),
             parser_version: None,
+            reproducibility_json: None,
         })
         .unwrap();
 
@@ -212,6 +216,7 @@ fn assertion_evidence_and_review_round_trip() {
             output_hash: None,
             metric_name: None,
             metric_value: None,
+            dependency_origin: None,
         })
         .unwrap();
     assert_eq!(store.evidence_for(assertion).unwrap().len(), 1);

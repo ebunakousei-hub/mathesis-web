@@ -2177,6 +2177,21 @@ table.demo-table code {
   font-size: 11px;
 }
 
+/* P6.1（docs/LEAN_DEPENDENCY_POLICY.md）: 依存チップのcheckerーderived
+   バッジ——大半を占めるtext-extractedは既定なので目立たせず、
+   例外(本物のLean検査由来)だけ強調する。 */
+.lin-chip-origin.is-checker-derived {
+  font-family: inherit;
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  padding: 1px 6px;
+  border-radius: 999px;
+  margin-left: 4px;
+  background: rgba(79, 192, 141, 0.2);
+  color: #4fc08d;
+}
+
 .lin-chip-provenance:hover {
   color: var(--accent);
 }
@@ -2482,6 +2497,19 @@ table.demo-table code {
   color: var(--text-dim);
   font-size: 12px;
   margin-top: 4px;
+}
+
+/* P6.1（docs/LEAN_DEPENDENCY_POLICY.md）: checker-derived depends_on辺の
+   追加説明——通常のmetric/sourceと視覚的に区切る。 */
+.prov-evidence-formal {
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px dashed var(--panel-border);
+}
+
+.prov-evidence-formal .prov-muted {
+  font-size: 12px;
+  line-height: 1.5;
 }
 
 .prov-caveat {

@@ -289,6 +289,18 @@ export interface EvidenceDetail {
   metricValue: number | null;
   sourceProvider: string;
   sourceProviderId: string;
+  /**
+   * P6.1（`docs/LEAN_DEPENDENCY_POLICY.md`）: `evidenceKind ===
+   * "formal_export"`の依存辺だけが持つ、`"type"`|`"body"`|`"both"`——
+   * 対象宣言の型・値(証明項)のどちらから見つかった参照か。それ以外は`null`。
+   */
+  dependencyOrigin: "type" | "body" | "both" | null;
+  /**
+   * P6.1: `evidenceKind === "formal_export"`だけが持つ、Lean/mathlib版・
+   * フィルタポリシー版をまとめた短い1行("leanprover/lean4:v4.29.0-rc6,
+   * mathlib 5c8398df, filter policy mathesis-lean-dependency-filter-v1")。
+   */
+  formalRevision: string | null;
 }
 
 export interface ReviewDecisionDetail {

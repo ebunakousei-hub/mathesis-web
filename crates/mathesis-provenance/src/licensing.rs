@@ -39,6 +39,7 @@ mod tests {
             adapter_name: "fixture".into(),
             adapter_version: "1".into(),
             parser_version: None,
+            reproducibility_json: None,
         }
     }
 

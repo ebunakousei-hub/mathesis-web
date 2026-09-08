@@ -27,6 +27,7 @@ fn seed_one_dependency_assertion(prov: &ProvenanceStore, release_id: mathesis_pr
             adapter_name: "test".into(),
             adapter_version: "0".into(),
             parser_version: None,
+            reproducibility_json: None,
         })
         .unwrap();
     let assertion = prov
@@ -54,6 +55,7 @@ fn seed_one_dependency_assertion(prov: &ProvenanceStore, release_id: mathesis_pr
         output_hash: None,
         metric_name: None,
         metric_value: None,
+        dependency_origin: None,
     })
     .unwrap();
     assertion.0
@@ -205,6 +207,7 @@ fn detects_ambiguous_duplicate_identity_key() {
                 adapter_name: "test".into(),
                 adapter_version: "0".into(),
                 parser_version: None,
+                reproducibility_json: None,
             })
             .unwrap();
         let assertion = prov
@@ -232,6 +235,7 @@ fn detects_ambiguous_duplicate_identity_key() {
             output_hash: None,
             metric_name: None,
             metric_value: None,
+            dependency_origin: None,
         })
         .unwrap();
         assertion.0
@@ -477,6 +481,7 @@ fn rejects_a_default_traversal_assertion_backed_only_by_text_extraction_evidence
             provider: "test".into(), provider_id: "t".into(), provider_revision: None, retrieved_at_unix: None,
             content_hash: None, licence: None, attribution: None, raw_payload_uri: None,
             adapter_name: "test".into(), adapter_version: "0".into(), parser_version: None,
+            reproducibility_json: None,
         })
         .unwrap();
     let assertion_id = prov
@@ -493,6 +498,7 @@ fn rejects_a_default_traversal_assertion_backed_only_by_text_extraction_evidence
         assertion_id, source_record_id: source, locator: Some("looks like text-extraction, not a Lean manifest".into()),
         evidence_kind: EvidenceKind::SourceSpan, // FormalExportではない
         extractor_or_model: None, version: None, input_hash: None, output_hash: None, metric_name: None, metric_value: None,
+        dependency_origin: None,
     })
     .unwrap();
 
@@ -530,6 +536,7 @@ fn rejects_a_default_traversal_assertion_whose_review_decision_has_no_reviewer_i
             provider: "test".into(), provider_id: "t".into(), provider_revision: None, retrieved_at_unix: None,
             content_hash: None, licence: None, attribution: None, raw_payload_uri: None,
             adapter_name: "test".into(), adapter_version: "0".into(), parser_version: None,
+            reproducibility_json: None,
         })
         .unwrap();
     let assertion_id = prov
@@ -546,6 +553,7 @@ fn rejects_a_default_traversal_assertion_whose_review_decision_has_no_reviewer_i
         assertion_id, source_record_id: source, locator: Some("a is a special case of b".into()),
         evidence_kind: EvidenceKind::SourceSpan, extractor_or_model: None, version: None,
         input_hash: None, output_hash: None, metric_name: None, metric_value: None,
+        dependency_origin: None,
     })
     .unwrap();
     prov.insert_review_decision(&NewReviewDecision {
@@ -583,11 +591,26 @@ fn accepts_default_traversal_assertions_with_qualifying_evidence() {
     let release = prov
         .get_or_insert_release(&NewRelease { tag: "t".into(), git_commit: None, generated_at_unix: 0, notes: None })
         .unwrap();
+    // P6.1: このsource_recordはFormalExport証拠が指す側なので、
+    // `verify_formal_evidence_has_reproducibility_metadata`が要求する
+    // 6項目すべてを埋めた再現性メタデータが必要——さもなくば「正しい状態を
+    // 誤って拒否しない」ことを確かめるこのテスト自体が壊れる。
+    let reproducibility_json = serde_json::json!({
+        "leanToolchain": "leanprover/lean4:v4.29.0-rc6",
+        "mathlibRev": "abc123",
+        "projectCommit": null,
+        "extractorVersion": "mathesis-lean-extract-v2",
+        "filteringPolicyVersion": mathesis_provenance::lean_manifest_adapter::FILTERING_POLICY_VERSION,
+        "rawManifestHash": "sha256:aaaa",
+        "normalizedManifestHash": "sha256:bbbb",
+    })
+    .to_string();
     let source = prov
         .get_or_insert_source_record(&NewSourceRecord {
             provider: "test".into(), provider_id: "t".into(), provider_revision: None, retrieved_at_unix: None,
             content_hash: None, licence: None, attribution: None, raw_payload_uri: None,
             adapter_name: "test".into(), adapter_version: "0".into(), parser_version: None,
+            reproducibility_json: Some(reproducibility_json),
         })
         .unwrap();
 
@@ -603,6 +626,7 @@ fn accepts_default_traversal_assertions_with_qualifying_evidence() {
         assertion_id: formal, source_record_id: source, locator: Some("Mod.a -> Mod.b".into()),
         evidence_kind: EvidenceKind::FormalExport, extractor_or_model: None, version: None,
         input_hash: None, output_hash: None, metric_name: None, metric_value: None,
+        dependency_origin: Some("body".into()),
     })
     .unwrap();
 
@@ -620,6 +644,7 @@ fn accepts_default_traversal_assertions_with_qualifying_evidence() {
         assertion_id: reviewed, source_record_id: source, locator: Some("a is a special case of b".into()),
         evidence_kind: EvidenceKind::SourceSpan, extractor_or_model: None, version: None,
         input_hash: None, output_hash: None, metric_name: None, metric_value: None,
+        dependency_origin: None,
     })
     .unwrap();
     prov.insert_review_decision(&NewReviewDecision {
@@ -642,6 +667,125 @@ fn accepts_default_traversal_assertions_with_qualifying_evidence() {
     assert!(
         !report.failures.iter().any(|f| f.check == "trusted_assertion_missing_qualifying_evidence"),
         "正式な証拠/本人確認済みレビューがあるなら拒否されないべき: {:?}",
+        report.failures
+    );
+    assert!(
+        !report
+            .failures
+            .iter()
+            .any(|f| f.check == "formal_evidence_missing_reproducibility_metadata" || f.check == "formal_evidence_filtering_policy_mismatch"),
+        "P6.1: 完全な再現性メタデータと一致するフィルタポリシー版があるなら拒否されないべき: {:?}",
+        report.failures
+    );
+}
+
+/// P6.1（`docs/LEAN_DEPENDENCY_POLICY.md`）: `formal_export`証拠自体はあるが、
+/// それを生んだSourceRecordに再現性メタデータが無い——`evidence_kind`だけ
+/// 見る`verify_trusted_assertions_have_qualifying_evidence`はこれを見逃す
+/// (evidence_kindはFormalExportのまま)。この一段深いチェックが検出する。
+#[test]
+fn rejects_a_default_traversal_assertion_whose_formal_evidence_has_no_reproducibility_metadata() {
+    let prov = ProvenanceStore::open_in_memory().unwrap();
+    let release = prov
+        .get_or_insert_release(&NewRelease { tag: "t".into(), git_commit: None, generated_at_unix: 0, notes: None })
+        .unwrap();
+    let source = prov
+        .get_or_insert_source_record(&NewSourceRecord {
+            provider: "test".into(), provider_id: "t".into(), provider_revision: None, retrieved_at_unix: None,
+            content_hash: None, licence: None, attribution: None, raw_payload_uri: None,
+            adapter_name: "test".into(), adapter_version: "0".into(), parser_version: None,
+            reproducibility_json: None, // 事故を想定: FormalExportなのに再現性メタデータが無い
+        })
+        .unwrap();
+    let assertion_id = prov
+        .insert_assertion(&NewRelationAssertion {
+            subject_ref: "judgment:1".into(), predicate: RelationKind::DependsOn, object_ref: "judgment:2".into(),
+            epistemic_state: EpistemicState::Observed, score: None, policy_version: None, created_by_run_id: None,
+            supersedes_id: None, release_id: release, legacy_ref: Some("d1".into()),
+        })
+        .unwrap();
+    prov.insert_evidence(&mathesis_provenance::model::NewEvidence {
+        assertion_id, source_record_id: source, locator: Some("Mod.a -> Mod.b".into()),
+        evidence_kind: EvidenceKind::FormalExport, extractor_or_model: None, version: None,
+        input_hash: None, output_hash: None, metric_name: None, metric_value: None,
+        dependency_origin: Some("body".into()),
+    })
+    .unwrap();
+
+    let manifest = base_manifest(release.0);
+    let report = verify_release(
+        &prov,
+        &VerifyInputs {
+            manifest: &manifest,
+            judgments_provenance: &base_judgments_sidecar(assertion_id.0),
+            relations_provenance: &empty_relations_sidecar(),
+            live_input_files: &[],
+        },
+    )
+    .unwrap();
+    assert!(
+        report.failures.iter().any(|f| f.check == "formal_evidence_missing_reproducibility_metadata"),
+        "reproducibility_jsonの無いformal_export証拠は拒否すべき: {:?}",
+        report.failures
+    );
+}
+
+/// P6.1: 再現性メタデータはあるが、`filteringPolicyVersion`が今のビルドの
+/// ものと違う——フィルタの定義が変わったのに古いルールで取り込んだ証拠を
+/// そのまま信頼してしまう事故を想定。
+#[test]
+fn rejects_a_default_traversal_assertion_whose_formal_evidence_used_a_different_filtering_policy_version() {
+    let prov = ProvenanceStore::open_in_memory().unwrap();
+    let release = prov
+        .get_or_insert_release(&NewRelease { tag: "t".into(), git_commit: None, generated_at_unix: 0, notes: None })
+        .unwrap();
+    let stale_reproducibility_json = serde_json::json!({
+        "leanToolchain": "leanprover/lean4:v4.29.0-rc6",
+        "mathlibRev": "abc123",
+        "projectCommit": null,
+        "extractorVersion": "mathesis-lean-extract-v1",
+        "filteringPolicyVersion": "mathesis-lean-dependency-filter-v0-stale",
+        "rawManifestHash": "sha256:aaaa",
+        "normalizedManifestHash": "sha256:bbbb",
+    })
+    .to_string();
+    let source = prov
+        .get_or_insert_source_record(&NewSourceRecord {
+            provider: "test".into(), provider_id: "t".into(), provider_revision: None, retrieved_at_unix: None,
+            content_hash: None, licence: None, attribution: None, raw_payload_uri: None,
+            adapter_name: "test".into(), adapter_version: "0".into(), parser_version: None,
+            reproducibility_json: Some(stale_reproducibility_json),
+        })
+        .unwrap();
+    let assertion_id = prov
+        .insert_assertion(&NewRelationAssertion {
+            subject_ref: "judgment:1".into(), predicate: RelationKind::DependsOn, object_ref: "judgment:2".into(),
+            epistemic_state: EpistemicState::Observed, score: None, policy_version: None, created_by_run_id: None,
+            supersedes_id: None, release_id: release, legacy_ref: Some("d1".into()),
+        })
+        .unwrap();
+    prov.insert_evidence(&mathesis_provenance::model::NewEvidence {
+        assertion_id, source_record_id: source, locator: Some("Mod.a -> Mod.b".into()),
+        evidence_kind: EvidenceKind::FormalExport, extractor_or_model: None, version: None,
+        input_hash: None, output_hash: None, metric_name: None, metric_value: None,
+        dependency_origin: Some("body".into()),
+    })
+    .unwrap();
+
+    let manifest = base_manifest(release.0);
+    let report = verify_release(
+        &prov,
+        &VerifyInputs {
+            manifest: &manifest,
+            judgments_provenance: &base_judgments_sidecar(assertion_id.0),
+            relations_provenance: &empty_relations_sidecar(),
+            live_input_files: &[],
+        },
+    )
+    .unwrap();
+    assert!(
+        report.failures.iter().any(|f| f.check == "formal_evidence_filtering_policy_mismatch"),
+        "古いfilteringPolicyVersionで取り込まれたformal_export証拠は拒否すべき: {:?}",
         report.failures
     );
 }

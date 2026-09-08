@@ -135,6 +135,32 @@ pub fn reconcile_graph(
         }
     }
 
+    // P6.1（`docs/LEAN_DEPENDENCY_POLICY.md`）: checker-derived depends_on
+    // assertions（`lean_manifest_adapter`、`legacy_ref: "lean-manifest:..."`）
+    // には`mathesis-graph`側の`judgment_dependencies`行が最初から無い
+    // ——`import-lean-manifest`は証拠層だけへ書き込み、レガシーのnode-graph
+    // テーブルには一切触れない（意図的な設計、`docs/P6_STATUS.md`参照）。
+    // 上のループは`graph.dependencies_of`だけを回るので、この種の辺は
+    // 素通りして`assertions.json`から漏れ、実際に発見した実害
+    // (Webの依存チップから根拠パネルを開くと「見つかりません」になる)
+    // ——ここで直接ProvenanceStoreから拾って同じ`dependencies`配列へ足す。
+    for a in prov.list_assertions_for_release(release.id)? {
+        if a.predicate != crate::model::RelationKind::DependsOn {
+            continue;
+        }
+        let is_checker_derived = a.legacy_ref.as_deref().is_some_and(|r| r.starts_with("lean-manifest:"));
+        if !is_checker_derived {
+            continue;
+        }
+        report.dependencies_total += 1;
+        let (Some(subject_entity_id), Some(object_entity_id)) = (a.subject_entity_id, a.object_entity_id) else { continue };
+        let (Some(from), Some(to)) = (prov.judgment_id_for_entity(subject_entity_id)?, prov.judgment_id_for_entity(object_entity_id)?) else {
+            continue;
+        };
+        report.dependencies_traced += 1;
+        dependencies.push(DependencyProvenance { from, to, assertion_id: a.id.0 });
+    }
+
     let mut citations = Vec::new();
     let papers = graph.list_papers()?;
     let arxiv_by_paper_id: std::collections::HashMap<i64, String> =

@@ -43,6 +43,9 @@ export class ProofGraphExplorer {
   private morphismsOf = new Map<number, ExportedMorphism[]>();
   /** P5, Item 1（`docs/P5_PLAN.md`）: `LineageGraph.dependencyPolicy`用。 */
   private dependencyPolicy = new Map<string, ExportedGraphDependency["traversalPolicy"]>();
+  /** P6.1（`docs/LEAN_DEPENDENCY_POLICY.md`）: `LineageGraph.dependencyAssertionId`/`dependencyOrigin`用。 */
+  private dependencyAssertionId = new Map<string, number>();
+  private dependencyOrigin = new Map<string, ExportedGraphDependency["origin"]>();
   /**
    * Priority 2, step 3（ユーザー指示 2026-09-08）: Lean elaborator由来
    * (`origin: "checker-derived"`)の依存辺の件数。`renderStats`で
@@ -151,6 +154,8 @@ export class ProofGraphExplorer {
       to.push(dep.from);
       this.usedBy.set(dep.to, to);
       this.dependencyPolicy.set(dependencyKey(dep.from, dep.to), dep.traversalPolicy);
+      this.dependencyAssertionId.set(dependencyKey(dep.from, dep.to), dep.assertionId);
+      this.dependencyOrigin.set(dependencyKey(dep.from, dep.to), dep.origin);
       this.dependencyEdgeCount += 1;
       if (dep.origin === "checker-derived") this.checkerDerivedDependencyCount += 1;
     }
@@ -176,6 +181,8 @@ export class ProofGraphExplorer {
       usedBy: this.usedBy,
       morphismsOf: this.morphismsOf,
       dependencyPolicy: this.dependencyPolicy,
+      dependencyAssertionId: this.dependencyAssertionId,
+      dependencyOrigin: this.dependencyOrigin,
     };
     const chainDepth = computeChainDepths(this.dependsOn, this.judgmentById.keys());
     this.lineageView = new LineageView(this.lineageRoot, graph, chainDepth, {

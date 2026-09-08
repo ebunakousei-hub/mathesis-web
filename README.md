@@ -41,6 +41,18 @@ Lean/Coq の証明支援系や arXiv から数学的知識を構造化し、検�
   既存のテキスト抽出と突き合わせ(一致611・text-only 32・checker-only
   69、両方とも実例で理由を確認済み)。「既定トラバース対象だけ」トグルが
   初めて空でなくなった）
+- **Phase 6.1: checker-derived依存の定義を厳密化**:
+  [docs/P6_1_STATUS.md](docs/P6_1_STATUS.md)、フィルタポリシーは
+  [docs/LEAN_DEPENDENCY_POLICY.md](docs/LEAN_DEPENDENCY_POLICY.md)
+  （`getUsedConstants`の生出力から自動生成物(再帰子・matcher・等式補題・
+  private詳細)を除くフィルタを定義・実装。11件の対抗フィクスチャで検証、
+  実データで2件の実バグを発見・修正(モジュール帰属の取り違え、
+  `.rec`/`.mk.inj`等5述語のどれも捕まえない生成物)。取り込み件数は
+  551件(680から減——生成物として誤って数えられていた宣言・辺が除かれた
+  結果)。依存の辺をクリックして根拠(Lean/mathlib版・型/値のどちらから
+  見つかったか・「最小依存の証明ではない」という明示)を開けるUIを新設
+  ——実装したところ`reconcile`がchecker-derived辺のassertion idを
+  一度も拾っていなかった実バグも発見・修正）
 
 このファイルはルート直下のクレート構成の見取り図。各クレートの詳細な
 設計判断は各 `src/lib.rs` 冒頭のドキュメントコメントを参照。

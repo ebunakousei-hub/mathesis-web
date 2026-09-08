@@ -250,6 +250,10 @@ export class LeanPlaygroundExplorer {
       usedBy,
       morphismsOf: new Map(), // 貼り付けだけでは射（含意・特殊化等）は分からない。
       dependencyPolicy,
+      // P6.1: 貼り付けだけの場では証拠層のassertionが無い——空のままでよい
+      // （`chip()`はprovenanceが引けなければ通常表示に戻る）。
+      dependencyAssertionId: new Map(),
+      dependencyOrigin: new Map(),
     };
     const chainDepth = computeChainDepths(dependsOn, judgmentById.keys());
 

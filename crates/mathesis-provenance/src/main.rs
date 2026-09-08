@@ -85,6 +85,7 @@ fn usage() -> ! {
          \x20     --releaseはimport-legacyで既に作成済みのタグを指定する。\n\
          \x20 import-lean-manifest --db <path> --graph-db <path> --release <tag>\n\
          \x20                      --arxiv-id <id> --manifest <manifest.json>\n\
+         \x20                      [--project-commit <sha>]\n\
          \x20     Priority 2, step 1: crates/mathesis-lean-extractが書き出した\n\
          \x20     本物のLean elaborator依存マニフェストを取り込む\n\
          \x20     (depends_on assertion, epistemic_state: observed,\n\
@@ -255,6 +256,10 @@ fn run_import_lean_manifest(args: &[String]) -> Result<()> {
     let release_tag = require_flag(args, "--release")?.to_string();
     let arxiv_id = require_flag(args, "--arxiv-id")?.to_string();
     let manifest_path = PathBuf::from(require_flag(args, "--manifest")?);
+    // P6.1（`docs/LEAN_DEPENDENCY_POLICY.md`）: `import-legacy --git-commit`と
+    // 同じ流儀——Leanはこの情報を知りようがないので、呼び出し元(このCLI)から
+    // 渡す。無ければ捏造せず`None`のまま。
+    let project_commit = flag_value(args, "--project-commit").map(str::to_string);
 
     let prov = ProvenanceStore::open(&db).with_context(|| format!("{db:?} を開けません"))?;
     let graph = GraphStore::open(&graph_db).with_context(|| format!("{graph_db:?} を開けません"))?;
@@ -265,7 +270,16 @@ fn run_import_lean_manifest(args: &[String]) -> Result<()> {
     let retrieved_at_unix = SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs() as i64).unwrap_or(0);
 
     let stats = prov.transaction(|| {
-        lean_manifest_adapter::import_lean_manifest(&prov, &graph, release.id, &arxiv_id, &raw, retrieved_at_unix)
+        lean_manifest_adapter::import_lean_manifest(
+            &prov,
+            &graph,
+            release.id,
+            &arxiv_id,
+            &raw,
+            retrieved_at_unix,
+            Some(&manifest_path.to_string_lossy()),
+            project_commit.as_deref(),
+        )
     })?;
     println!(
         "Lean manifest ({arxiv_id}): dependencies +{} (skip {}), declarations unmatched {}, dependency targets unmatched {}",

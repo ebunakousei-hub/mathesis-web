@@ -49,6 +49,16 @@ export interface LineageGraph {
    * `ExportedMorphism.traversalPolicy`を直接持っているので別マップは不要。
    */
   dependencyPolicy: Map<string, ExportedGraphDependency["traversalPolicy"]>;
+  /**
+   * P6.1（`docs/LEAN_DEPENDENCY_POLICY.md`）: 依存辺`"${from}->${to}"` →
+   * そのassertion id。`showAssertionDetail`（`provenancePanel.ts`）へ渡して
+   * `assertions.json`の詳細（checker-derivedならevidenceの
+   * `dependencyOrigin`/`formalRevision`まで）を開けるようにする——
+   * 射のチップが`data-assertion-id`で同じことをしているのと同じ理由。
+   */
+  dependencyAssertionId: Map<string, number>;
+  /** P6.1: 依存辺`"${from}->${to}"` → `"checker-derived"`|`"text-extracted"`。 */
+  dependencyOrigin: Map<string, ExportedGraphDependency["origin"]>;
 }
 
 export type LineageRelation =

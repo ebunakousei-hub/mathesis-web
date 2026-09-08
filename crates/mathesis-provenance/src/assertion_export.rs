@@ -25,6 +25,16 @@ pub struct EvidenceDetail {
     pub metric_value: Option<f64>,
     pub source_provider: String,
     pub source_provider_id: String,
+    /// P6.1（`docs/LEAN_DEPENDENCY_POLICY.md`）: `"type"`/`"body"`/`"both"`
+    /// ——`evidence_kind: formal_export`の依存辺がどちらから見つかったか。
+    /// それ以外の種別は`None`。
+    pub dependency_origin: Option<String>,
+    /// P6.1: `evidence_kind: formal_export`だけが埋める、
+    /// `SourceRecord.reproducibility_json`から組み立てた短い人間可読な
+    /// 文字列("Lean 4.29.0-rc6, mathlib 5c8398d, filter policy
+    /// mathesis-lean-dependency-filter-v1")。詳細パネルが「どのLean/
+    /// フィルタ版がこの辺を作ったか」を生のJSONを見せずに説明できるように。
+    pub formal_revision: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -83,6 +93,23 @@ pub fn evidence_details_for(prov: &ProvenanceStore, id: AssertionId) -> anyhow::
                     if e.locator.is_some() { "approximate_location" } else { "source_only" }
                 }
             };
+            // P6.1（`docs/LEAN_DEPENDENCY_POLICY.md`）: `reproducibility_json`
+            // (Lean/mathlib版・フィルタポリシー版)を、生のJSONではなく
+            // 詳細パネルにそのまま出せる短い1行へ組み立てる。
+            // formal_exportでない、またはメタデータが無い場合は`None`
+            // ——無いものを捏造しない。
+            let formal_revision = if e.evidence_kind == crate::model::EvidenceKind::FormalExport {
+                source.as_ref().and_then(|s| s.reproducibility_json.as_deref()).and_then(|raw| {
+                    let v: serde_json::Value = serde_json::from_str(raw).ok()?;
+                    let lean = v.get("leanToolchain")?.as_str()?;
+                    let mathlib = v.get("mathlibRev")?.as_str()?;
+                    let policy = v.get("filteringPolicyVersion")?.as_str()?;
+                    let mathlib_short: String = mathlib.chars().take(8).collect();
+                    Some(format!("{lean}, mathlib {mathlib_short}, filter policy {policy}"))
+                })
+            } else {
+                None
+            };
             Ok(EvidenceDetail {
                 evidence_kind: e.evidence_kind.as_str().to_string(),
                 locator: e.locator,
@@ -92,6 +119,8 @@ pub fn evidence_details_for(prov: &ProvenanceStore, id: AssertionId) -> anyhow::
                 metric_value: e.metric_value,
                 source_provider: source.as_ref().map(|s| s.provider.clone()).unwrap_or_default(),
                 source_provider_id: source.as_ref().map(|s| s.provider_id.clone()).unwrap_or_default(),
+                dependency_origin: e.dependency_origin,
+                formal_revision,
             })
         })
         .collect()

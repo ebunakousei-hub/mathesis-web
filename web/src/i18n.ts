@@ -207,9 +207,12 @@ const DICT = {
   dependsOnLabel: { ja: "依存している判断", en: "Depends on" },
   usedByLabel: { ja: "参照している判断", en: "Used by" },
   dependencyInferredHint: {
-    ja: "証明・定義本体に現れる識別子の名前を一致させて機械的に検出したもので、証明項上の最小依存関係であることや、参照が実際に意味上の依存であることは確認していません。",
-    en: "Detected mechanically by matching identifier names that appear in the proof/definition body. This does not confirm it is a minimal dependency on the proof term, or that the reference is semantically meaningful.",
+    ja: "多くは証明・定義本体に現れる識別子の名前を一致させて機械的に検出したもの(text-extracted)。「Lean検査由来」の印が付いたものは、型検査済みの証明項からLean elaboratorが直接取り出した参照——それでも証明項上の最小依存であることや意味上の依存であることまでは確認していません（クリックで詳細）。",
+    en: "Most are detected mechanically by matching identifier names in the proof/definition body (text-extracted). Ones marked \"checker-derived\" were pulled directly from the type-checked proof term by the Lean elaborator instead — though even those don't confirm minimality or semantic relevance (click for detail).",
   },
+  /** P6.1（`docs/LEAN_DEPENDENCY_POLICY.md`）: 依存チップの由来バッジ。 */
+  dependencyOriginCheckerBadge: { ja: "Lean検査由来", en: "checker-derived" },
+  dependencyOriginDetailHint: { ja: "根拠の詳細を見る", en: "View evidence detail" },
   sourcePaperLabel: { ja: "由来論文", en: "Source paper" },
   proofGraphNoResults: { ja: "該当する判断ノードが見つかりませんでした。", en: "No matching judgment nodes found." },
   morphismsLabel: { ja: "論理的な射（層3）", en: "Logical morphisms (layer 3)" },

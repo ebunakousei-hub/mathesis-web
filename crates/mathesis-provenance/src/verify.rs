@@ -183,6 +183,67 @@ fn verify_trusted_assertions_have_qualifying_evidence(prov: &ProvenanceStore, re
     Ok(())
 }
 
+/// P6.1（ユーザー指示 2026-09-08、`docs/LEAN_DEPENDENCY_POLICY.md`
+/// 「Reproducibility metadata」）: `default_traversal`まで届いた
+/// `formal_export`証拠は、Lean/mathlibのバージョン・抽出器版・フィルタ
+/// ポリシー版・raw/normalizedマニフェストハッシュを再現性メタデータ
+/// として持たなければならない——`verify_trusted_assertions_have_
+/// qualifying_evidence`は「evidence_kindがformal_exportかどうか」しか
+/// 見ないので、evidence自体は存在するのに、それを生んだmanifestが
+/// 実際どのLean版・どのフィルタルールで作られたのか分からない（=検証者が
+/// 追試できない）事故を捕まえない。これはその一段深いチェック。
+/// `filteringPolicyVersion`がこのビルドの
+/// `lean_manifest_adapter::FILTERING_POLICY_VERSION`と食い違う場合も
+/// 拒否する——`SOURCE_MAPPING_POLICY_VERSION`と同じ「ポリシーが古い証拠を
+/// 黙って信頼しない」という扱い。
+fn verify_formal_evidence_has_reproducibility_metadata(prov: &ProvenanceStore, release_id: i64, report: &mut VerifyReport) -> anyhow::Result<()> {
+    use crate::lean_manifest_adapter::FILTERING_POLICY_VERSION;
+    use crate::model::EvidenceKind;
+    use crate::relation_policy::{traversal_policy, TraversalPolicy};
+
+    const REQUIRED_KEYS: [&str; 6] =
+        ["leanToolchain", "mathlibRev", "extractorVersion", "filteringPolicyVersion", "rawManifestHash", "normalizedManifestHash"];
+
+    for assertion in prov.list_assertions_for_release(crate::model::ReleaseId(release_id))? {
+        if traversal_policy(assertion.predicate, assertion.epistemic_state) != TraversalPolicy::DefaultTraversal {
+            continue;
+        }
+        for ev in prov.evidence_for(assertion.id)? {
+            if ev.evidence_kind != EvidenceKind::FormalExport {
+                continue;
+            }
+            let context = format!("assertion #{} evidence #{} (formal_export)", assertion.id.0, ev.id.0);
+            let Some(source) = prov.try_get_source_record(ev.source_record_id)? else { continue }; // 別チェック(evidence_missing_source_record)が既に検出する
+            let Some(json_str) = &source.reproducibility_json else {
+                report.fail("formal_evidence_missing_reproducibility_metadata", format!("{context}: source_record #{} has no reproducibility_json", source.id.0));
+                continue;
+            };
+            let parsed: serde_json::Value = match serde_json::from_str(json_str) {
+                Ok(v) => v,
+                Err(e) => {
+                    report.fail("formal_evidence_missing_reproducibility_metadata", format!("{context}: reproducibility_json is not valid JSON: {e}"));
+                    continue;
+                }
+            };
+            for key in REQUIRED_KEYS {
+                let present_and_nonempty = parsed.get(key).and_then(|v| v.as_str()).is_some_and(|s| !s.is_empty());
+                if !present_and_nonempty {
+                    report.fail("formal_evidence_missing_reproducibility_metadata", format!("{context}: reproducibility_json is missing or empty '{key}'"));
+                }
+            }
+            if let Some(policy) = parsed.get("filteringPolicyVersion").and_then(|v| v.as_str()) {
+                if policy != FILTERING_POLICY_VERSION {
+                    report.fail(
+                        "formal_evidence_filtering_policy_mismatch",
+                        format!("{context}: reproducibility_json filteringPolicyVersion='{policy}', this build uses '{FILTERING_POLICY_VERSION}'"),
+                    );
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
 /// キーが同じなのに別々のassertion idを指すエントリが無いか確かめる
 /// （「重複した識別子キーが曖昧に解決される」の検査）。
 fn check_no_ambiguous_keys<K: std::hash::Hash + Eq + std::fmt::Debug + Clone>(
@@ -335,8 +396,27 @@ pub fn verify_release(prov: &ProvenanceStore, inputs: &VerifyInputs) -> anyhow::
         report.fail("trusted_evidence_query_error", e.to_string());
     }
 
+    // 4.6. P6.1: formal_export証拠自体の再現性メタデータ(Lean/mathlib版・
+    // 抽出器版・フィルタポリシー版・raw/normalizedハッシュ)の有無と整合性。
+    if let Err(e) = verify_formal_evidence_has_reproducibility_metadata(prov, m.release_id, &mut report) {
+        report.fail("reproducibility_metadata_query_error", e.to_string());
+    }
+
     // 5. 重複識別子キーの曖昧解決チェック。
-    check_no_ambiguous_keys(jp.dependencies.iter().map(|d| ((d.from, d.to), d.assertion_id)), "dependencies", &mut report);
+    //
+    // `dependencies`だけは対象外——P6.1でreconcileがcheckerーderived
+    // (`lean-manifest:...`)分もsidecarへ含めるよう直した結果(実データで
+    // 確認済み)、同じ(from,to)組がtext-extracted由来とchecker-derived由来の
+    // *2つの正当な別assertion*を持つケースが実在する(比較の「agree」件、
+    // `docs/P6_STATUS.md`)——これは事故による曖昧解決ではなく、2つの独立
+    // ソースが同じ辺を裏付けているという意図した状態そのもの。
+    // `DependencyProvenance`はソース種別を持たないので、ここでは
+    // 「ソースをまたいだ重複は正当、同一ソース内の重複だけが事故」という
+    // 区別を付けられない——各アダプタ自身の冪等性は
+    // `relation_assertions`テーブルの`UNIQUE(release_id, legacy_ref)`制約が
+    // 既に保証している(このsidecarとは独立の、より強い保証)ので、ここでの
+    // チェック省略は実害が無い。citations/morphisms/relationsは今も
+    // 1ソース1辺のままなので従来通り検査する。
     check_no_ambiguous_keys(jp.citations.iter().map(|c| ((c.from.clone(), c.to.clone()), c.assertion_id)), "citations", &mut report);
     check_no_ambiguous_keys(jp.morphisms.iter().map(|m| (m.morphism_id, m.assertion_id)), "morphisms", &mut report);
     check_no_ambiguous_keys(

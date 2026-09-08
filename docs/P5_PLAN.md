@@ -62,7 +62,7 @@ exists in `web/public/assertions.json`; only `web/src` changes.
 ARCHITECTURE_NEXT §12 Phase 3's own exit line: *"Show proposed relations
 only behind an explicit UI control."*
 
-## Item 2 — `EntityId` foreign-key cutover
+## Item 2 — `EntityId` foreign-key cutover (additive stage complete)
 
 Named explicitly in `docs/P3_STATUS.md` as the deliberately-deferred,
 larger, breaking migration: *"Cutting `RelationAssertion` over to
@@ -76,16 +76,16 @@ additively, then cut over, never a big-bang rewrite):
 1. Add nullable `subject_entity_id INTEGER REFERENCES entities(id)` /
    `object_entity_id INTEGER REFERENCES entities(id)` columns to
    `relation_assertions`, alongside the existing `subject_ref`/
-   `object_ref` TEXT columns — additive, no existing row invalidated.
+   `object_ref` TEXT columns — additive, no existing row invalidated. **Done.**
 2. Backfill both columns via `resolve_entity_ref` for every existing
    assertion. `docs/P3_STATUS.md` already proved 209,416/209,416 (100%)
-   of existing references resolve — the backfill should not lose a single
-   row, and the release gate should fail loudly if it ever does.
+   of existing references resolve — the backfill does not lose a single
+   row, and the build command fails loudly if it ever does. **Done.**
 3. Add an invariant check to `verify-release`: every assertion's
    `subject_entity_id`/`object_entity_id` (once populated) must equal
    `resolve_entity_ref(subject_ref)`/`resolve_entity_ref(object_ref)` —
    catches drift between the string and the FK during the transition
-   period when both exist.
+   period when both exist. **Done.**
 4. Only after that invariant holds cleanly across a full real-data run:
    switch readers (`web_export.rs`, `assertion_export.rs`,
    `catalog_adapter.rs`'s coverage report) to the FK columns, then in a

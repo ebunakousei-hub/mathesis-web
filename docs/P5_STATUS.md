@@ -1,4 +1,4 @@
-# Phase 5 status — trust-aware traversal, Item 1: wired into the client
+# Phase 5 status — trust-aware traversal and staged EntityId integrity
 
 > Written 2026-09-07, executing `docs/P5_PLAN.md`'s Item 1 (recommended
 > first: zero schema risk, purely additive on the client). Prompted by an
@@ -7,6 +7,13 @@
 > did not anticipate (today's data has zero edges at the trusted tier), and
 > the design decision made in response — plus a genuine pre-existing bug
 > this work exposed and fixed.
+>
+> **Updated 2026-09-08**: Item 2's additive migration stage (schema
+> columns, backfill, drift check) landed in the working tree and is now
+> covered by adversarial tests, verified against real data, and had two
+> real bugs (a 15-minute performance regression, a reporting-honesty gap)
+> found and fixed before being treated as done — see the dedicated section
+> below.
 
 ## What changed
 
@@ -125,9 +132,74 @@ this reasoning.
 - **Does not add a citations.json consumer** — unrelated to this item;
   `docs/P4_STATUS.md` already covers why `Cites` isn't in the web export
   yet.
-- **Does not attempt Items 2/3 from `docs/P5_PLAN.md`** (the `EntityId`
-  foreign-key cutover, the declarative `relation_schema` table) — those
-  remain unstarted, as planned.
+- **Item 2 is now in its additive migration stage.** Existing databases
+  receive nullable `subject_entity_id`/`object_entity_id` columns and
+  indexes on open. Assertion insertion populates them whenever the catalog
+  already contains the endpoint; `build-catalog` backfills all existing
+  assertions and fails if any endpoint remains unresolved. Release
+  verification compares both IDs with the current string-reference
+  resolution, so drift cannot be published.
+- The tagged strings remain in the schema and on the wire for display and
+  compatibility. The IDs are authoritative for catalog integrity, but the
+  final removal of string authority is intentionally deferred until a
+  complete real-data release has passed this invariant.
+- **Item 3 (the declarative `relation_schema` table) remains deferred.**
+
+## Item 2's additive migration, verified against real production data
+
+The additive-stage code (nullable `subject_entity_id`/`object_entity_id`
+columns, `backfill_assertion_entity_ids`, `verify_release`'s drift check)
+arrived in the working tree without having been run against real data or
+covered by adversarial tests yet. Before treating it as done:
+
+- **Added the adversarial tests the staged work was missing**: a missing
+  subject FK and a missing object FK are both exercised (realistically —
+  inserting an assertion before its endpoints are cataloged, then
+  cataloging them, reproduces exactly the `import-legacy`-before-
+  `build-catalog` ordering that happens in practice) and confirmed to
+  surface as `entity_endpoint_drift` in `verify_release`
+  (`crates/mathesis-provenance/tests/verify_test.rs`); a dangling FK
+  (pointing at an entity id that doesn't exist) is confirmed **rejected by
+  SQLite's own foreign-key constraint**, not just by application logic
+  (`crates/mathesis-provenance/tests/entity_id_migration_test.rs` —
+  proven by attempting the corrupting `UPDATE` directly and asserting it
+  errors); opening a database created before this migration is confirmed
+  to add the new columns without losing the existing row, and reopening
+  an already-migrated database is confirmed idempotent (same file).
+  `crates/mathesis-provenance/src/entity.rs` also gained direct unit tests
+  for `backfill_assertion_entity_ids`'s all-or-nothing contract and
+  `assertion_entity_id_coverage`. 78/78 tests pass.
+- **Found and fixed a real performance bug before it finished a first
+  real-data run**: `backfill_assertion_entity_ids` originally issued one
+  `UPDATE` per assertion with no surrounding transaction — SQLite's
+  default auto-commit mode fsyncs every statement, the exact `mathesis-
+  graph::store`-documented pitfall this project already knows about
+  ("1行=1トランザクションだとfsync待ちが支配的、実測9.8ms/行"). Against
+  the real 104,708-assertion table this made `build-catalog` run past 15
+  minutes before being stopped. Wrapped the update loop in
+  `self.transaction(...)`, matching `legacy_adapter::import_graph`'s own
+  existing pattern; the real run then completed in **53 seconds**.
+- **Found and fixed a second issue while checking rerun behavior**: the
+  first version of `backfill_assertion_entity_ids` unconditionally
+  reported every resolved assertion as newly "backfilled" on every run,
+  including reruns where nothing had actually changed — the exact
+  reporting-honesty bug this project already caught once in P3's
+  `catalog_adapter.rs` ("+N (skip M)" vs. a misleading bare "+N" every
+  time). Fixed by returning a `BackfillStats{newly_backfilled,
+  already_correct, unresolved}` struct that distinguishes an actual write
+  from a no-op confirmation, verified by an explicit rerun assertion in
+  the test suite.
+- **Real-data result, backed up first**
+  (`scratch/provenance.db.bak-pre-entityid-migration`): `build-catalog`
+  reports `assertion entity endpoints: +104708 backfilled (already
+  correct: 0)` on the first run and `+0 backfilled (already correct:
+  104708)` on rerun — **100% of the 104,708 real assertions** now carry
+  correct `subject_entity_id`/`object_entity_id`, matching the
+  209,416/209,416 catalog-reference coverage already proven in P3.
+  `verify-release` (P1 sidecar completeness + P2 web-export integrity,
+  now also checking `entity_endpoint_drift`/`unresolved_entity_reference`
+  since the catalog is present) passes cleanly against this backfilled
+  database with no new failures.
 
 ## Verified
 
@@ -136,6 +208,12 @@ this reasoning.
   `verify-release` re-run against the regenerated
   `dependencies.json`/`morphisms.json` (now carrying the new field) passes
   cleanly — P1/P2 gates unaffected.
+- Item 2: 78/78 Rust tests pass workspace-wide, including 10 new
+  adversarial tests covering every scenario named above; real `build-
+  catalog` run backfills 104,708/104,708 assertions in 53 seconds (down
+  from a 15+-minute run that was stopped after finding the missing-
+  transaction bug); real `verify-release` passes cleanly with the new
+  drift checks active.
 - `npm run build` and `npx tsc --noEmit` clean; `npm run eval` unchanged
   (MRR@10 0.9667, Top-1 95%, dead 0% — same numbers as before this
   change, confirming no regression to search).
@@ -162,3 +240,14 @@ this reasoning.
 - `docs/P5_PLAN.md` — the plan this executed; its own risk framing did
   not anticipate the zero-trusted-edges finding, recorded honestly here
   rather than glossed over.
+- `crates/mathesis-provenance/src/entity.rs` — `BackfillStats`,
+  `backfill_assertion_entity_ids` (now transaction-wrapped), the
+  all-or-nothing contract and its idempotent-rerun tests.
+- `crates/mathesis-provenance/src/store.rs::ensure_assertion_entity_columns`
+  — the on-open migration for pre-existing databases.
+- `crates/mathesis-provenance/src/verify.rs::verify_catalog_assertions`
+  — `entity_endpoint_drift`/`unresolved_entity_reference` detection.
+- `crates/mathesis-provenance/tests/entity_id_migration_test.rs` — the
+  schema-level guarantees (pre-migration DB, idempotent reopen, dangling
+  FK rejected by SQLite itself) that need raw `rusqlite` access and so
+  don't fit `verify_test.rs`'s public-API-only convention.

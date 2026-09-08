@@ -358,6 +358,86 @@ fn rejects_catalog_with_unresolved_assertion_endpoint() {
     assert!(report.failures.iter().any(|f| f.check == "unresolved_entity_reference"));
 }
 
+/// P5, Item 2（`docs/P5_PLAN.md`）: `judgment:1`/`judgment:2`とも
+/// `insert_assertion`の時点ではまだカタログに無い(=`subject_entity_id`/
+/// `object_entity_id`はNULLのまま挿入される)。その後カタログに両方とも
+/// 追加されても、`backfill_assertion_entity_ids`を走らせない限り
+/// アサーション自身のFK列は古い(NULLの)ままなので、`verify_release`は
+/// これを"unresolved"ではなく"drift"(参照は解決できるのにFK列と食い違う)
+/// として報告すべき——実運用で`import-legacy`の後`build-catalog`を
+/// 忘れた/失敗したケースをそのまま再現している。
+#[test]
+fn detects_missing_entity_id_as_drift_once_the_catalog_can_resolve_both_endpoints() {
+    let prov = ProvenanceStore::open_in_memory().unwrap();
+    let release = prov
+        .get_or_insert_release(&NewRelease { tag: "t".into(), git_commit: None, generated_at_unix: 0, notes: None })
+        .unwrap();
+    let assertion_id = seed_one_dependency_assertion(&prov, release);
+    prov.get_or_insert_entity(
+        &NewEntity { kind: EntityKind::Judgment, display_label: "one".into(), source_record_id: None },
+        "judgment:1",
+    )
+    .unwrap();
+    prov.get_or_insert_entity(
+        &NewEntity { kind: EntityKind::Judgment, display_label: "two".into(), source_record_id: None },
+        "judgment:2",
+    )
+    .unwrap();
+    // 意図的に`backfill_assertion_entity_ids`を呼ばない——FK列が古いまま
+    // 残っている状態を再現する。
+
+    let manifest = base_manifest(release.0);
+    let report = verify_release(
+        &prov,
+        &VerifyInputs {
+            manifest: &manifest,
+            judgments_provenance: &base_judgments_sidecar(assertion_id),
+            relations_provenance: &empty_relations_sidecar(),
+            live_input_files: &[],
+        },
+    )
+    .unwrap();
+    let drift_failures: Vec<_> = report.failures.iter().filter(|f| f.check == "entity_endpoint_drift").collect();
+    assert_eq!(drift_failures.len(), 2, "subject/objectの両方がdriftとして検出されるべき: {:?}", report.failures);
+}
+
+/// 上のテストの裏返し: `backfill_assertion_entity_ids`を実際に走らせれば、
+/// 同じ状況からdriftが0件になる——ゲートが「壊れた状態を検出する」だけで
+/// なく「正しく直した状態を誤検出しない」ことも確かめる。
+#[test]
+fn backfilling_before_verify_release_clears_the_drift_that_would_otherwise_be_reported() {
+    let prov = ProvenanceStore::open_in_memory().unwrap();
+    let release = prov
+        .get_or_insert_release(&NewRelease { tag: "t".into(), git_commit: None, generated_at_unix: 0, notes: None })
+        .unwrap();
+    let assertion_id = seed_one_dependency_assertion(&prov, release);
+    prov.get_or_insert_entity(
+        &NewEntity { kind: EntityKind::Judgment, display_label: "one".into(), source_record_id: None },
+        "judgment:1",
+    )
+    .unwrap();
+    prov.get_or_insert_entity(
+        &NewEntity { kind: EntityKind::Judgment, display_label: "two".into(), source_record_id: None },
+        "judgment:2",
+    )
+    .unwrap();
+    let stats = prov.backfill_assertion_entity_ids().unwrap();
+    assert_eq!((stats.newly_backfilled, stats.already_correct, stats.unresolved), (1, 0, 0));
+
+    let manifest = base_manifest(release.0);
+    let report = verify_release(
+        &prov,
+        &VerifyInputs {
+            manifest: &manifest,
+            judgments_provenance: &base_judgments_sidecar(assertion_id),
+            relations_provenance: &empty_relations_sidecar(),
+            live_input_files: &[],
+        },
+    )
+    .unwrap();
+    assert!(report.is_ok(), "backfill済みならdriftは0件のはず: {:?}", report.failures);
+}
+
 #[test]
 fn rejects_manifest_with_unknown_mapping_policy() {
     let prov = ProvenanceStore::open_in_memory().unwrap();

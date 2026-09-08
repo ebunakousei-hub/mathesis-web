@@ -55,8 +55,10 @@ CREATE TABLE IF NOT EXISTS source_records (
 CREATE TABLE IF NOT EXISTS relation_assertions (
     id                  INTEGER PRIMARY KEY,
     subject_ref         TEXT NOT NULL,
+    subject_entity_id   INTEGER REFERENCES entities(id),
     predicate           TEXT NOT NULL,
     object_ref          TEXT NOT NULL,
+    object_entity_id    INTEGER REFERENCES entities(id),
     epistemic_state     TEXT NOT NULL,
     score               REAL,
     policy_version      TEXT,
@@ -148,13 +150,33 @@ impl ProvenanceStore {
         let conn = Connection::open(path)?;
         conn.execute_batch("PRAGMA foreign_keys = ON;")?;
         conn.execute_batch(SCHEMA)?;
+        Self::ensure_assertion_entity_columns(&conn)?;
         Ok(ProvenanceStore { conn })
+    }
+
+    fn ensure_assertion_entity_columns(conn: &Connection) -> Result<()> {
+        let columns: std::collections::HashSet<String> = conn
+            .prepare("PRAGMA table_info(relation_assertions)")?
+            .query_map([], |row| row.get::<_, String>(1))?
+            .collect::<rusqlite::Result<_>>()?;
+        if !columns.contains("subject_entity_id") {
+            conn.execute("ALTER TABLE relation_assertions ADD COLUMN subject_entity_id INTEGER REFERENCES entities(id)", [])?;
+        }
+        if !columns.contains("object_entity_id") {
+            conn.execute("ALTER TABLE relation_assertions ADD COLUMN object_entity_id INTEGER REFERENCES entities(id)", [])?;
+        }
+        conn.execute_batch(
+            "CREATE INDEX IF NOT EXISTS idx_assertions_subject_entity ON relation_assertions(subject_entity_id);
+             CREATE INDEX IF NOT EXISTS idx_assertions_object_entity ON relation_assertions(object_entity_id);",
+        )?;
+        Ok(())
     }
 
     pub fn open_in_memory() -> Result<Self> {
         let conn = Connection::open_in_memory()?;
         conn.execute_batch("PRAGMA foreign_keys = ON;")?;
         conn.execute_batch(SCHEMA)?;
+        Self::ensure_assertion_entity_columns(&conn)?;
         Ok(ProvenanceStore { conn })
     }
 

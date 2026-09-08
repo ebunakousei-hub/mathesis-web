@@ -117,7 +117,15 @@ fn verify_catalog_assertions(prov: &ProvenanceStore, release_id: i64, report: &m
         let subject = prov.resolve_entity_ref_with_kind(&assertion.subject_ref)?;
         let object = prov.resolve_entity_ref_with_kind(&assertion.object_ref)?;
         let (subject_kind, object_kind) = match (subject, object) {
-            (Some((_, subject_kind)), Some((_, object_kind))) => (subject_kind, object_kind),
+            (Some((subject_id, subject_kind)), Some((object_id, object_kind))) => {
+                if assertion.subject_entity_id != Some(subject_id) {
+                    report.fail("entity_endpoint_drift", format!("{context}: subject_entity_id does not match catalog reference"));
+                }
+                if assertion.object_entity_id != Some(object_id) {
+                    report.fail("entity_endpoint_drift", format!("{context}: object_entity_id does not match catalog reference"));
+                }
+                (subject_kind, object_kind)
+            }
             (subject, object) => {
                 if subject.is_none() {
                     report.fail("unresolved_entity_reference", format!("{context}: subject '{}' is not cataloged", assertion.subject_ref));

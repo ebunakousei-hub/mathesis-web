@@ -10,7 +10,77 @@ use crate::model::{Entity, EntityId, EntityKind, LabelOrigin, NewEntity};
 use crate::store::{ProvenanceStore, Result};
 use rusqlite::{params, OptionalExtension};
 
+/// `backfill_assertion_entity_ids`の結果。`import_graph`の`ImportStats`
+/// (`imported`/`skipped_existing`)や`catalog_adapter::CatalogStats`
+/// (`was_new`集計)と同じ「再実行のたびに同じ数字が+Nと出て、あたかも
+/// 毎回新規に増えているように見える」ことを避ける規律——実データで最初に
+/// 実装したときは`unresolved==0`なら常に全件を無条件にUPDATEし、2回目の
+/// 実行でも"104708 backfilled"と出た(実際には1件も変わっていなかった)。
+#[derive(Debug, Default, Clone, Copy)]
+pub struct BackfillStats {
+    pub newly_backfilled: usize,
+    pub already_correct: usize,
+    pub unresolved: usize,
+}
+
 impl ProvenanceStore {
+    /// Populate the additive assertion endpoint columns from the catalog.
+    /// Never invents an entity — an assertion whose subject/object isn't
+    /// cataloged yet is counted as `unresolved`, not silently skipped.
+    ///
+    /// 実データ(104,708件)で最初に踏んだ実測: 1件ずつ`self.conn.execute`する
+    /// と各UPDATEがSQLiteの自動コミットで独立トランザクションになり、
+    /// `mathesis-graph::store`が既に文書化している「1行=1トランザクションだと
+    /// fsync待ちが支配的（実測9.8ms/行）」と同じ罠を踏んで15分以上かかった
+    /// ——`legacy_adapter::import_graph`と同じ「呼び出し全体を1トランザクション
+    /// に包む」規律をここにも適用する（修正後、実データで53秒）。
+    pub fn backfill_assertion_entity_ids(&self) -> Result<BackfillStats> {
+        let assertions = self.list_assertions()?;
+        let mut updates = Vec::with_capacity(assertions.len());
+        let mut already_correct = 0;
+        let mut unresolved = 0;
+        for assertion in &assertions {
+            let subject = self.resolve_entity_ref(&assertion.subject_ref)?;
+            let object = self.resolve_entity_ref(&assertion.object_ref)?;
+            match (subject, object) {
+                (Some(subject), Some(object)) => {
+                    if assertion.subject_entity_id == Some(subject) && assertion.object_entity_id == Some(object) {
+                        already_correct += 1;
+                    } else {
+                        updates.push((assertion.id.0, subject.0, object.0));
+                    }
+                }
+                _ => unresolved += 1,
+            }
+        }
+        if unresolved > 0 {
+            return Ok(BackfillStats { newly_backfilled: 0, already_correct: 0, unresolved });
+        }
+        let newly_backfilled = updates.len();
+        self.transaction(|| -> Result<()> {
+            for (assertion_id, subject_id, object_id) in updates.iter().copied() {
+                self.conn.execute(
+                    "UPDATE relation_assertions
+                     SET subject_entity_id = ?1, object_entity_id = ?2
+                     WHERE id = ?3",
+                    params![subject_id, object_id, assertion_id],
+                )?;
+            }
+            Ok(())
+        })?;
+        Ok(BackfillStats { newly_backfilled, already_correct, unresolved: 0 })
+    }
+
+    pub fn assertion_entity_id_coverage(&self) -> Result<(i64, i64)> {
+        let total: i64 = self.conn.query_row(
+            "SELECT COUNT(*) FROM relation_assertions", [], |row| row.get(0))?;
+        let complete: i64 = self.conn.query_row(
+            "SELECT COUNT(*) FROM relation_assertions
+             WHERE subject_entity_id IS NOT NULL AND object_entity_id IS NOT NULL",
+            [], |row| row.get(0))?;
+        Ok((complete, total))
+    }
+
     /// `ref_string`が指すエンティティのidを引く。まだ知らない参照なら`None`
     /// ——「実在しない参照」と「まだカタログを作っていない」を呼び出し側で
     /// 区別する必要はここでは持たない（`catalog_adapter`のカバレッジ集計が
@@ -209,5 +279,122 @@ mod tests {
         let prov = ProvenanceStore::open_in_memory().unwrap();
         assert_eq!(prov.resolve_entity_ref("judgment:999").unwrap(), None);
         assert!(prov.try_get_entity(crate::model::EntityId(999)).unwrap().is_none());
+    }
+
+    // P5, Item 2（`docs/P5_PLAN.md`）: additive EntityId endpoint columns.
+
+    use crate::model::{EpistemicState, NewRelationAssertion, NewRelease, RelationKind};
+
+    fn store_with_release() -> (ProvenanceStore, crate::model::ReleaseId) {
+        let prov = ProvenanceStore::open_in_memory().unwrap();
+        let release = prov
+            .get_or_insert_release(&NewRelease { tag: "t".into(), git_commit: None, generated_at_unix: 0, notes: None })
+            .unwrap();
+        (prov, release)
+    }
+
+    fn assertion(prov: &ProvenanceStore, release: crate::model::ReleaseId, subject: &str, object: &str, legacy_ref: &str) -> crate::model::AssertionId {
+        prov.insert_assertion(&NewRelationAssertion {
+            subject_ref: subject.into(),
+            predicate: RelationKind::DependsOn,
+            object_ref: object.into(),
+            epistemic_state: EpistemicState::Extracted,
+            score: None,
+            policy_version: None,
+            created_by_run_id: None,
+            supersedes_id: None,
+            release_id: release,
+            legacy_ref: Some(legacy_ref.into()),
+        })
+        .unwrap()
+    }
+
+    #[test]
+    fn insert_assertion_populates_entity_ids_immediately_when_the_catalog_already_has_both_endpoints() {
+        let (prov, release) = store_with_release();
+        let subject_id = prov.get_or_insert_entity(&judgment_entity("a"), "judgment:1").unwrap().0;
+        let object_id = prov.get_or_insert_entity(&judgment_entity("b"), "judgment:2").unwrap().0;
+        let a = assertion(&prov, release, "judgment:1", "judgment:2", "d1");
+        let stored = prov.get_assertion(a).unwrap();
+        assert_eq!(stored.subject_entity_id, Some(subject_id));
+        assert_eq!(stored.object_entity_id, Some(object_id));
+    }
+
+    #[test]
+    fn insert_assertion_leaves_entity_ids_null_when_the_catalog_does_not_have_the_endpoint_yet() {
+        let (prov, release) = store_with_release();
+        // カタログ構築より前にアサーションだけが先に入る、という実際に
+        // 起こりうる順序（`import-legacy`の後、`build-catalog`の前）。
+        let a = assertion(&prov, release, "judgment:1", "judgment:2", "d1");
+        let stored = prov.get_assertion(a).unwrap();
+        assert_eq!(stored.subject_entity_id, None, "無い情報を捏造しない — カタログに無ければNULLのまま");
+        assert_eq!(stored.object_entity_id, None);
+    }
+
+    #[test]
+    fn backfill_populates_ids_once_both_endpoints_are_cataloged() {
+        let (prov, release) = store_with_release();
+        let a = assertion(&prov, release, "judgment:1", "judgment:2", "d1");
+        let subject_id = prov.get_or_insert_entity(&judgment_entity("a"), "judgment:1").unwrap().0;
+        let object_id = prov.get_or_insert_entity(&judgment_entity("b"), "judgment:2").unwrap().0;
+
+        let stats = prov.backfill_assertion_entity_ids().unwrap();
+        assert_eq!(stats.newly_backfilled, 1);
+        assert_eq!(stats.already_correct, 0);
+        assert_eq!(stats.unresolved, 0);
+
+        let stored = prov.get_assertion(a).unwrap();
+        assert_eq!(stored.subject_entity_id, Some(subject_id));
+        assert_eq!(stored.object_entity_id, Some(object_id));
+
+        // 再実行では「新規に埋めた」ではなく「既に正しい」と正直に報告する
+        // ——`catalog_adapter.rs`のwas_new集計と同じ規律
+        // (`docs/P3_STATUS.md`「毎回+Nと表示され続ける」バグの再発防止)。
+        let rerun = prov.backfill_assertion_entity_ids().unwrap();
+        assert_eq!(rerun.newly_backfilled, 0, "2回目は1件も新規に変わっていない");
+        assert_eq!(rerun.already_correct, 1);
+    }
+
+    /// `backfill_assertion_entity_ids`の全か無かの契約:
+    /// 1件でも解決できない参照があれば、解決できたぶんも含めて**一切**
+    /// 書き込まない。`entities`/`entity_refs`は片方だけ実データを持ち
+    /// 半端に埋まった状態にはならない——`verify-release`が1件でも失敗すれば
+    /// 全体を非ゼロ終了させるのと同じ「部分的な成功を成功と呼ばない」規律。
+    #[test]
+    fn backfill_applies_nothing_at_all_when_any_assertion_endpoint_is_still_unresolved() {
+        let (prov, release) = store_with_release();
+        let a1 = assertion(&prov, release, "judgment:1", "judgment:2", "d1");
+        let a2 = assertion(&prov, release, "judgment:3", "judgment:4", "d2");
+        // a1の両端だけカタログに入れる。a2は両端とも未カタログのまま。
+        prov.get_or_insert_entity(&judgment_entity("a"), "judgment:1").unwrap();
+        prov.get_or_insert_entity(&judgment_entity("b"), "judgment:2").unwrap();
+
+        let stats = prov.backfill_assertion_entity_ids().unwrap();
+        assert_eq!(stats.newly_backfilled, 0, "a2が未解決である限り、a1すら書き込まれない");
+        assert_eq!(stats.already_correct, 0);
+        assert_eq!(stats.unresolved, 1);
+
+        assert_eq!(prov.get_assertion(a1).unwrap().subject_entity_id, None, "全か無かなのでa1も更新されていないはず");
+        let _ = a2;
+    }
+
+    #[test]
+    fn assertion_entity_id_coverage_reports_total_and_complete_counts() {
+        let (prov, release) = store_with_release();
+        assertion(&prov, release, "judgment:1", "judgment:2", "d1");
+        assertion(&prov, release, "judgment:3", "judgment:4", "d2");
+        prov.get_or_insert_entity(&judgment_entity("a"), "judgment:1").unwrap();
+        prov.get_or_insert_entity(&judgment_entity("b"), "judgment:2").unwrap();
+        prov.get_or_insert_entity(&judgment_entity("c"), "judgment:3").unwrap();
+        prov.get_or_insert_entity(&judgment_entity("d"), "judgment:4").unwrap();
+
+        let (complete_before, total) = prov.assertion_entity_id_coverage().unwrap();
+        assert_eq!(total, 2);
+        assert_eq!(complete_before, 0, "backfillを走らせるまではまだ0件");
+
+        prov.backfill_assertion_entity_ids().unwrap();
+        let (complete_after, total_after) = prov.assertion_entity_id_coverage().unwrap();
+        assert_eq!(total_after, 2);
+        assert_eq!(complete_after, 2);
     }
 }

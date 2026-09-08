@@ -57,18 +57,11 @@ variants) actually referred to the same real-world object.
 
 ## What this increment deliberately does NOT do
 
-- **`subject_ref`/`object_ref` are still tagged strings, not real foreign
-  keys.** The catalog is additive — every existing assertion, the entire
-  `web-export` pipeline, and the P1/P2 release gate are byte-for-byte
-  unchanged by this increment (confirmed: `verify-release` still passes
-  cleanly against the same real data after `build-catalog` runs).
-  Cutting `RelationAssertion` over to reference `EntityId` directly is a
-  separate, larger, and *breaking* migration (it touches
-  `insert_assertion`'s validation, every adapter, every export) that this
-  increment does not attempt — matching this project's own established
-  discipline of proving a piece additively before cutting anything over
-  (the same shape P1→P2 took with the provenance sidecar → direct
-  generation transition).
+- **The string-only endpoint limitation was addressed additively in P5.**
+  Assertions now have nullable foreign-key endpoint columns populated from
+  `entity_refs`; existing databases are migrated on open and `build-catalog`
+  backfills them, failing on unresolved endpoints. Strings remain as
+  compatibility/display fields until a later release removes their authority.
 - **No `RelationSchema` table.** ARCHITECTURE_NEXT.md §5.2 also describes
   a table declaring which entity kinds each predicate allows.
   `validate_relation_kinds` (existing, from P1) already does this

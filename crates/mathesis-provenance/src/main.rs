@@ -518,6 +518,14 @@ fn run_build_catalog(args: &[String]) -> Result<()> {
         input_file_hash(&taxonomy_db)?.sha256,
     )?;
     prov.replace_catalog_metadata(&metadata)?;
+    let backfill = prov.backfill_assertion_entity_ids()?;
+    if backfill.unresolved > 0 {
+        anyhow::bail!("catalog backfill left {} assertions with unresolved endpoints", backfill.unresolved);
+    }
+    println!(
+        "assertion entity endpoints: +{} backfilled (already correct: {})",
+        backfill.newly_backfilled, backfill.already_correct
+    );
     println!(
         "catalog metadata: schema {}, build {}, resolution {}, entities {}, aliases {}",
         metadata.schema_version,

@@ -52,9 +52,12 @@ impl ProvenanceStore {
         self.conn
             .prepare_cached(
                 "INSERT INTO relation_assertions
-                    (subject_ref, predicate, object_ref, epistemic_state, score, policy_version,
-                     created_by_run_id, supersedes_id, release_id, legacy_ref)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+                    (subject_ref, subject_entity_id, predicate, object_ref, object_entity_id,
+                     epistemic_state, score, policy_version, created_by_run_id, supersedes_id,
+                     release_id, legacy_ref)
+                 VALUES (?1, (SELECT entity_id FROM entity_refs WHERE ref_string = ?1),
+                         ?2, ?3, (SELECT entity_id FROM entity_refs WHERE ref_string = ?3),
+                         ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
             )?
             .execute(params![
                 new.subject_ref,
@@ -74,7 +77,8 @@ impl ProvenanceStore {
     pub fn get_assertion(&self, id: AssertionId) -> Result<RelationAssertion> {
         self.conn
             .prepare_cached(
-                "SELECT id, subject_ref, predicate, object_ref, epistemic_state, score, policy_version,
+                "SELECT id, subject_ref, subject_entity_id, predicate, object_ref, object_entity_id,
+                        epistemic_state, score, policy_version,
                         created_by_run_id, supersedes_id, release_id, legacy_ref
                  FROM relation_assertions WHERE id = ?1",
             )?
@@ -86,7 +90,8 @@ impl ProvenanceStore {
     pub fn try_get_assertion(&self, id: AssertionId) -> Result<Option<RelationAssertion>> {
         self.conn
             .prepare_cached(
-                "SELECT id, subject_ref, predicate, object_ref, epistemic_state, score, policy_version,
+                "SELECT id, subject_ref, subject_entity_id, predicate, object_ref, object_entity_id,
+                        epistemic_state, score, policy_version,
                         created_by_run_id, supersedes_id, release_id, legacy_ref
                  FROM relation_assertions WHERE id = ?1",
             )?
@@ -96,7 +101,8 @@ impl ProvenanceStore {
 
     pub fn list_assertions(&self) -> Result<Vec<RelationAssertion>> {
         let mut stmt = self.conn.prepare_cached(
-            "SELECT id, subject_ref, predicate, object_ref, epistemic_state, score, policy_version,
+            "SELECT id, subject_ref, subject_entity_id, predicate, object_ref, object_entity_id,
+                    epistemic_state, score, policy_version,
                     created_by_run_id, supersedes_id, release_id, legacy_ref
              FROM relation_assertions ORDER BY id",
         )?;
@@ -109,7 +115,8 @@ impl ProvenanceStore {
     /// （docs/P2_STATUS.md参照）。
     pub fn list_assertions_for_release(&self, release: ReleaseId) -> Result<Vec<RelationAssertion>> {
         let mut stmt = self.conn.prepare_cached(
-            "SELECT id, subject_ref, predicate, object_ref, epistemic_state, score, policy_version,
+            "SELECT id, subject_ref, subject_entity_id, predicate, object_ref, object_entity_id,
+                    epistemic_state, score, policy_version,
                     created_by_run_id, supersedes_id, release_id, legacy_ref
              FROM relation_assertions WHERE release_id = ?1 ORDER BY id",
         )?;
@@ -144,20 +151,22 @@ impl ProvenanceStore {
     }
 
     fn assertion_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<RelationAssertion> {
-        let predicate_str: String = row.get(2)?;
-        let state_str: String = row.get(4)?;
+        let predicate_str: String = row.get(3)?;
+        let state_str: String = row.get(6)?;
         Ok(RelationAssertion {
             id: AssertionId(row.get(0)?),
             subject_ref: row.get(1)?,
+            subject_entity_id: row.get::<_, Option<i64>>(2)?.map(crate::model::EntityId),
             predicate: RelationKind::from_str(&predicate_str).expect("保存済み predicate は常に既知の値"),
-            object_ref: row.get(3)?,
+            object_ref: row.get(4)?,
+            object_entity_id: row.get::<_, Option<i64>>(5)?.map(crate::model::EntityId),
             epistemic_state: EpistemicState::from_str(&state_str).expect("保存済み epistemic_state は常に既知の値"),
-            score: row.get(5)?,
-            policy_version: row.get(6)?,
-            created_by_run_id: row.get(7)?,
-            supersedes_id: row.get::<_, Option<i64>>(8)?.map(AssertionId),
-            release_id: ReleaseId(row.get(9)?),
-            legacy_ref: row.get(10)?,
+            score: row.get(7)?,
+            policy_version: row.get(8)?,
+            created_by_run_id: row.get(9)?,
+            supersedes_id: row.get::<_, Option<i64>>(10)?.map(AssertionId),
+            release_id: ReleaseId(row.get(11)?),
+            legacy_ref: row.get(12)?,
         })
     }
 }

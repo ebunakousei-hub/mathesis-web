@@ -335,8 +335,10 @@ pub struct NewRelationAssertion {
 pub struct RelationAssertion {
     pub id: AssertionId,
     pub subject_ref: String,
+    pub subject_entity_id: Option<EntityId>,
     pub predicate: RelationKind,
     pub object_ref: String,
+    pub object_entity_id: Option<EntityId>,
     pub epistemic_state: EpistemicState,
     pub score: Option<f64>,
     pub policy_version: Option<String>,

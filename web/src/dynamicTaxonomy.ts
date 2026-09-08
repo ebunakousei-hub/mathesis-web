@@ -589,20 +589,31 @@ export class DynamicTaxonomyExplorer {
         r.relation === "broader" ? t("relationBroader") : r.relation === "narrower" ? t("relationNarrower") : t("relationEquivalent");
       const badge = document.createElement("span");
       badge.className = `dt-relation-badge dt-relation-badge-${r.status}`;
-      badge.textContent = r.status === "confirmed" ? t("relationConfirmed") : t("relationGrounded");
-      badge.title = t("relationBadgeHint");
+      // P6.3（`docs/P6_3_STATUS.md`）: `reviewed`は`promote-review`で
+      // 本人確認済みレビューにより昇格した意味的関係——テキスト抽出の
+      // confirmed/groundedとは異なる根拠なので、別バッジ・別文言にする。
+      badge.textContent =
+        r.status === "reviewed" ? t("relationReviewed") : r.status === "confirmed" ? t("relationConfirmed") : t("relationGrounded");
+      badge.title = r.status === "reviewed" ? t("relationReviewedBadgeHint") : t("relationBadgeHint");
       head.append(`${relationLabel} `, this.makeRelationTargetButton(r.other), " ", badge);
       item.appendChild(head);
 
       const evidence = document.createElement("p");
       evidence.className = "dt-relation-evidence";
-      const link = document.createElement("a");
-      link.href = `https://arxiv.org/abs/${encodeURIComponent(r.evidenceArxivId)}`;
-      link.target = "_blank";
-      link.rel = "noopener";
-      link.textContent = r.evidenceArxivId;
-      link.onclick = (ev) => ev.stopPropagation();
-      evidence.append(`"${r.evidenceSentence}" — `, link);
+      // P6.3: `reviewed`のevidenceSentenceはレビューの根拠(rationale)で
+      // あってarXiv論文の一文ではないため、`evidenceArxivId`は空——
+      // 空リンク(`.../abs/`)を出さない。
+      if (r.evidenceArxivId.length > 0) {
+        const link = document.createElement("a");
+        link.href = `https://arxiv.org/abs/${encodeURIComponent(r.evidenceArxivId)}`;
+        link.target = "_blank";
+        link.rel = "noopener";
+        link.textContent = r.evidenceArxivId;
+        link.onclick = (ev) => ev.stopPropagation();
+        evidence.append(`"${r.evidenceSentence}" — `, link);
+      } else {
+        evidence.append(`"${r.evidenceSentence}"`);
+      }
       item.appendChild(evidence);
 
       // `r.assertionId`は`relations.json`自体が証拠層から生成される
@@ -893,7 +904,7 @@ export interface TypedRelationView {
    * "equivalent" = 同値。
    */
   relation: "narrower" | "broader" | "equivalent";
-  status: "confirmed" | "grounded";
+  status: "confirmed" | "grounded" | "reviewed";
   confidence: number | null;
   evidenceSentence: string;
   evidenceArxivId: string;

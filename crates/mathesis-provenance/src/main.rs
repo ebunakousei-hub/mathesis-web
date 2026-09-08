@@ -15,7 +15,11 @@ use mathesis_provenance::manifest::{
     WEB_EXPORT_SCHEMA_VERSION,
 };
 use mathesis_provenance::relation_policy::SOURCE_MAPPING_POLICY_VERSION;
-use mathesis_provenance::model::NewRelease;
+use mathesis_provenance::model::{
+    AssertionId, EpistemicState, EvidenceKind, NewEvidence, NewRelationAssertion, NewRelease, NewReviewDecision,
+    NewSourceRecord, ReviewId, ReviewOutcome,
+};
+use mathesis_provenance::review::is_authenticated_accept;
 use mathesis_provenance::reconcile::{reconcile_graph, reconcile_taxonomy, JudgmentsProvenanceExport, RelationsProvenanceExport};
 use mathesis_provenance::release_gate::{print_web_export_failures, verify_web_export};
 use mathesis_provenance::verify::{verify_release, VerifyInputs};
@@ -83,6 +87,29 @@ fn usage() -> ! {
          \x20     (Paper entity + Cites assertion, epistemic_state: observed)。\n\
          \x20     ネットワークに一切触れない、冪等な純粋インポート。\n\
          \x20     --releaseはimport-legacyで既に作成済みのタグを指定する。\n\
+         \x20 review --db <path> --assertion-id <id> --decision <accept|reject|supersede|revoke>\n\
+         \x20        --reviewer-id <id> --authorization-level <level> --release <tag>\n\
+         \x20        [--rationale <text>] [--scope <text>] [--supersedes <review-id>]\n\
+         \x20        [--expires-at <unix>]\n\
+         \x20     P6.3（docs/P6_3_STATUS.md）: 本人確認済みレビューを1件、追記専用の\n\
+         \x20     review_decisionsログへ記録する——`mathesis-annotate`が層3の射を\n\
+         \x20     人間に承認させるのと同じ役割を、証拠層の(型クラス階層・生成物などで\n\
+         \x20     機械的には裏付けられない)意味的関係に対して果たす唯一の書き込み口。\n\
+         \x20     --release は今のリリースタグをそのまま dataset_version として記録する\n\
+         \x20     ——リリースゲート(verify-release)はこれが検証対象のリリースと一致し、\n\
+         \x20     期限切れでなく、直近の実効判断であることまで確かめる。\n\
+         \x20 promote-review --db <path> --assertion-id <id> --to-state <reviewed|verified> --release <tag>\n\
+         \x20                --reviewer-id <id> --authorization-level <level> [--rationale <text>]\n\
+         \x20     P6.3（docs/P6_3_STATUS.md）: `review`単独では、意味的関係が最初から\n\
+         \x20     `reviewed`/`verified`で無ければ何も信頼されない(既定トラバース対象は\n\
+         \x20     epistemic_state自体もチェックする)——だが`legacy_adapter`/`taxonomy`は\n\
+         \x20     `extracted`/`proposed`しか作らない。このコマンドが両者の橋渡し:\n\
+         \x20     既存assertionと同じsubject/predicate/objectで新しいepistemic_stateの\n\
+         \x20     assertionを1件`supersedes_id`付きで積み(元の行は変更しない、追記のみ)、\n\
+         \x20     手書きの根拠を`reviewer_note`のEvidenceとして添え、その新しいassertionに\n\
+         \x20     対して`review`と同じ本人確認済みaccept決定を1件記録する——3つの書き込みを\n\
+         \x20     1トランザクションにまとめた、唯一の「意味的関係を本人確認済みレビューで\n\
+         \x20     昇格させる」経路。\n\
          \x20 import-lean-manifest --db <path> --graph-db <path> --release <tag>\n\
          \x20                      --arxiv-id <id> --manifest <manifest.json>\n\
          \x20                      [--project-commit <sha>]\n\
@@ -118,6 +145,8 @@ fn main() -> Result<()> {
         Some("fetch-openalex") => run_fetch_openalex(&args[2..]),
         Some("import-openalex") => run_import_openalex(&args[2..]),
         Some("import-lean-manifest") => run_import_lean_manifest(&args[2..]),
+        Some("review") => run_review(&args[2..]),
+        Some("promote-review") => run_promote_review(&args[2..]),
         _ => usage(),
     }
 }
@@ -289,6 +318,195 @@ fn run_import_lean_manifest(args: &[String]) -> Result<()> {
     Ok(())
 }
 
+/// P6.3（`docs/P6_3_STATUS.md`）: 本人確認済みレビューを記録する唯一の書き込み口。
+/// `--authorization-level`を必須にするのは意図的——「誰が」だけでなく
+/// 「どんな資格で」を毎回明示させることで、リリースゲート
+/// (`review::is_authenticated_accept`)が空文字列やNoneを本人確認済みと
+/// 取り違えないようにする。`--release`はそのままdataset_versionへ入る
+/// ——「このレビューはどのリリース時点の内容を見て判断したか」を自己申告
+/// させ、後で別リリースへ確認なしに横流しされないようにする(ゲート側の
+/// "no drift"チェック)。
+fn run_review(args: &[String]) -> Result<()> {
+    let db = PathBuf::from(require_flag(args, "--db")?);
+    let assertion_id = require_flag(args, "--assertion-id")?
+        .parse::<i64>()
+        .context("--assertion-id は整数である必要があります")?;
+    let decision_str = require_flag(args, "--decision")?;
+    let decision = ReviewOutcome::from_str(decision_str)
+        .with_context(|| format!("未知の --decision '{decision_str}' (accept/reject/supersede/revoke/split/merge/needs_expert のいずれか)"))?;
+    let reviewer_id = require_flag(args, "--reviewer-id")?.to_string();
+    let authorization_level = require_flag(args, "--authorization-level")?.to_string();
+    let release_tag = require_flag(args, "--release")?.to_string();
+    let rationale = flag_value(args, "--rationale").map(str::to_string);
+    let scope = flag_value(args, "--scope").map(str::to_string);
+    let supersedes_review_id = flag_value(args, "--supersedes")
+        .map(|s| s.parse::<i64>().context("--supersedes は整数である必要があります"))
+        .transpose()?
+        .map(ReviewId);
+    let expires_at_unix = flag_value(args, "--expires-at")
+        .map(|s| s.parse::<i64>().context("--expires-at はUNIX秒である必要があります"))
+        .transpose()?;
+
+    let prov = ProvenanceStore::open(&db).with_context(|| format!("{db:?} を開けません"))?;
+    let assertion = prov
+        .try_get_assertion(AssertionId(assertion_id))?
+        .with_context(|| format!("assertion #{assertion_id} が見つかりません"))?;
+    let release = prov
+        .get_release_by_tag(&release_tag)?
+        .with_context(|| format!("release '{release_tag}' not found"))?;
+    if assertion.release_id.0 != release.id.0 {
+        eprintln!(
+            "警告: assertion #{assertion_id} は release_id={} ですが --release '{release_tag}' は id={} を指します（別リリースのassertionをレビューしようとしていないか確認してください）",
+            assertion.release_id.0, release.id.0
+        );
+    }
+
+    let now_unix = SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs() as i64).unwrap_or(0);
+    let review_id = prov.insert_review_decision(&NewReviewDecision {
+        assertion_id: AssertionId(assertion_id),
+        decision,
+        reviewer_id: Some(reviewer_id.clone()),
+        authorization_level: Some(authorization_level.clone()),
+        scope,
+        rationale,
+        decided_at_unix: now_unix,
+        dataset_version: Some(release_tag.clone()),
+        expires_at_unix,
+        supersedes_review_id,
+    })?;
+
+    println!(
+        "review #{} recorded: assertion #{assertion_id} {} by {reviewer_id} ({authorization_level}), release '{release_tag}'",
+        review_id.0,
+        decision.as_str(),
+    );
+
+    let effective = prov.effective_review_decision(AssertionId(assertion_id))?;
+    match effective {
+        Some(d) if d.id == review_id => {
+            let authenticated = is_authenticated_accept(&d, now_unix, &release_tag);
+            println!(
+                "this is now the effective decision for assertion #{assertion_id} — counts as an authenticated accept for the release gate: {authenticated}",
+            );
+        }
+        Some(d) => println!(
+            "note: assertion #{assertion_id}'s effective decision is still review #{} ({}) — this one was recorded but is not the most recent",
+            d.id.0,
+            d.decision.as_str()
+        ),
+        None => unreachable!("just inserted a decision for this assertion"),
+    }
+    Ok(())
+}
+
+/// P6.3（`docs/P6_3_STATUS.md`）: `review`だけでは意味的関係を信頼できない
+/// ——`traversal_policy`はepistemic_stateも見るので、legacy_adapter/taxonomyが
+/// 作る`extracted`/`proposed`のままではacceptが何件あろうと`default_traversal`に
+/// 届かない。このコマンドが「既存assertionと同じ内容で新しいepistemic_stateの
+/// assertionを積む(supersedes_id付き、元の行は不変) + reviewer_note証拠を添える +
+/// 本人確認済みaccept決定を記録する」の3手順を1トランザクションでまとめる。
+fn run_promote_review(args: &[String]) -> Result<()> {
+    let db = PathBuf::from(require_flag(args, "--db")?);
+    let old_assertion_id = require_flag(args, "--assertion-id")?
+        .parse::<i64>()
+        .context("--assertion-id は整数である必要があります")?;
+    let to_state_str = require_flag(args, "--to-state")?;
+    let to_state = EpistemicState::from_str(to_state_str)
+        .with_context(|| format!("未知の --to-state '{to_state_str}' (reviewed/verified など)"))?;
+    let release_tag = require_flag(args, "--release")?.to_string();
+    let reviewer_id = require_flag(args, "--reviewer-id")?.to_string();
+    let authorization_level = require_flag(args, "--authorization-level")?.to_string();
+    let rationale = flag_value(args, "--rationale").map(str::to_string);
+    let scope = flag_value(args, "--scope").map(str::to_string);
+    let expires_at_unix = flag_value(args, "--expires-at")
+        .map(|s| s.parse::<i64>().context("--expires-at はUNIX秒である必要があります"))
+        .transpose()?;
+
+    let prov = ProvenanceStore::open(&db).with_context(|| format!("{db:?} を開けません"))?;
+    let old_assertion = prov
+        .try_get_assertion(AssertionId(old_assertion_id))?
+        .with_context(|| format!("assertion #{old_assertion_id} が見つかりません"))?;
+    let release = prov
+        .get_release_by_tag(&release_tag)?
+        .with_context(|| format!("release '{release_tag}' not found"))?;
+    if old_assertion.release_id.0 != release.id.0 {
+        anyhow::bail!(
+            "assertion #{old_assertion_id} は release_id={} ですが --release '{release_tag}' は id={} を指します",
+            old_assertion.release_id.0,
+            release.id.0
+        );
+    }
+
+    let now_unix = SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs() as i64).unwrap_or(0);
+    let (new_assertion_id, review_id) = prov.transaction(|| -> anyhow::Result<(AssertionId, ReviewId)> {
+        let new_assertion_id = prov.insert_assertion(&NewRelationAssertion {
+            subject_ref: old_assertion.subject_ref.clone(),
+            predicate: old_assertion.predicate,
+            object_ref: old_assertion.object_ref.clone(),
+            epistemic_state: to_state,
+            score: old_assertion.score,
+            policy_version: old_assertion.policy_version.clone(),
+            created_by_run_id: Some(format!("mathesis-provenance promote-review by {reviewer_id}")),
+            supersedes_id: Some(old_assertion.id),
+            release_id: release.id,
+            legacy_ref: None,
+        })?;
+        // 手書きの根拠を持つ人間のレビュー由来のsource_record。
+        // `(provider, provider_id, provider_revision)`の一意制約により
+        // 同じreviewer_idでの再実行は既存行を再利用する。
+        let source_record_id = prov.get_or_insert_source_record(&NewSourceRecord {
+            provider: "manual-review".into(),
+            provider_id: reviewer_id.clone(),
+            provider_revision: None,
+            retrieved_at_unix: Some(now_unix),
+            content_hash: None,
+            licence: None,
+            attribution: None,
+            raw_payload_uri: None,
+            adapter_name: "mathesis-provenance promote-review".into(),
+            adapter_version: env!("CARGO_PKG_VERSION").to_string(),
+            parser_version: None,
+            reproducibility_json: None,
+        })?;
+        prov.insert_evidence(&NewEvidence {
+            assertion_id: new_assertion_id,
+            source_record_id,
+            locator: rationale.clone(),
+            evidence_kind: EvidenceKind::ReviewerNote,
+            extractor_or_model: None,
+            version: None,
+            input_hash: None,
+            output_hash: None,
+            metric_name: None,
+            metric_value: None,
+            dependency_origin: None,
+        })?;
+        let review_id = prov.insert_review_decision(&NewReviewDecision {
+            assertion_id: new_assertion_id,
+            decision: ReviewOutcome::Accept,
+            reviewer_id: Some(reviewer_id.clone()),
+            authorization_level: Some(authorization_level.clone()),
+            scope,
+            rationale,
+            decided_at_unix: now_unix,
+            dataset_version: Some(release_tag.clone()),
+            expires_at_unix,
+            supersedes_review_id: None,
+        })?;
+        Ok((new_assertion_id, review_id))
+    })?;
+
+    println!(
+        "assertion #{old_assertion_id} promoted to '{}' as new assertion #{} (supersedes #{old_assertion_id}), review #{} recorded",
+        to_state.as_str(),
+        new_assertion_id.0,
+        review_id.0,
+    );
+    let policy = mathesis_provenance::relation_policy::traversal_policy(old_assertion.predicate, to_state);
+    println!("traversal_policy for the new assertion: {}", policy.as_str());
+    Ok(())
+}
+
 fn run_stats(args: &[String]) -> Result<()> {
     let db = PathBuf::from(require_flag(args, "--db")?);
     let prov = ProvenanceStore::open(&db).with_context(|| format!("{db:?} を開けません"))?;
@@ -324,14 +542,31 @@ fn run_reconcile(args: &[String]) -> Result<()> {
     // assertion単位の全詳細(Evidence・ReviewDecision・既定トラバース対象か)
     // を1つの辞書にまとめて出す——フロントエンドのprovenanceパネルが
     // クリックのたびに個別リクエストを飛ばさずに済むようにする。
-    let all_assertion_ids = judgments_export
+    //
+    // P6.3（`docs/P6_3_STATUS.md`）: レガシーサイドカー由来のid集合だけでは
+    // 足りないと実データで判明した——`promote-review`が作るassertionは
+    // legacy_refを持たない(対応する旧mathesis-graph/taxonomy行が無い)ため、
+    // reconcileの`legacy_ref`走査に一切引っかからない。結果、そのassertionは
+    // `relations.json`には正しく現れるのに`assertions.json`には載らず、
+    // provenanceパネルが「見つかりません」を返す——という食い違いを実際に
+    // 起こしてから見つけた。`build_web_export`が実際に書き出すid集合
+    // (=UIが実際にクリックしうる辺の全体)をここでも計算し、レガシー由来の
+    // id集合と合わせて重複排除する——`web-export`は別コマンドとして独立に
+    // 実行されるので、ここで計算し直す以外に整合を取る方法が無い。
+    let live_web_export = build_web_export(&prov, release.id)?;
+    let all_assertion_ids: std::collections::BTreeSet<i64> = judgments_export
         .dependencies
         .iter()
         .map(|d| d.assertion_id)
         .chain(judgments_export.citations.iter().map(|c| c.assertion_id))
         .chain(judgments_export.morphisms.iter().map(|m| m.assertion_id))
-        .chain(relations_export.relations.iter().map(|r| r.assertion_id));
-    let assertions = export_assertion_details(&prov, &release_tag, all_assertion_ids)?;
+        .chain(relations_export.relations.iter().map(|r| r.assertion_id))
+        .chain(live_web_export.dependencies.iter().map(|d| d.assertion_id))
+        .chain(live_web_export.morphisms.iter().map(|m| m.id))
+        .chain(live_web_export.relations.iter().map(|r| r.assertion_id))
+        .collect();
+    let now_unix = SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs() as i64).unwrap_or(0);
+    let assertions = export_assertion_details(&prov, &release_tag, now_unix, all_assertion_ids)?;
     std::fs::write(out_dir.join("assertions.json"), serde_json::to_string(&assertions)?)?;
 
     // 外部レビュー(2026-09-05)提案2: 機械可読マニフェスト。サイドカーが
@@ -412,6 +647,7 @@ fn run_verify(args: &[String]) -> Result<()> {
         println!("note: --graph-db/--taxonomy-db not given, skipping input-file hash re-verification");
     }
 
+    let now_unix = SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs() as i64).unwrap_or(0);
     let report = verify_release(
         &prov,
         &VerifyInputs {
@@ -419,6 +655,7 @@ fn run_verify(args: &[String]) -> Result<()> {
             judgments_provenance: &judgments_provenance,
             relations_provenance: &relations_provenance,
             live_input_files: &live_input_files,
+            now_unix,
         },
     )?;
     report.print();
@@ -519,6 +756,7 @@ fn run_verify_release(args: &[String]) -> Result<()> {
     }
 
     println!("--- P1: sidecar completeness (verify) ---");
+    let now_unix = SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs() as i64).unwrap_or(0);
     let verify_report = verify_release(
         &prov,
         &VerifyInputs {
@@ -526,6 +764,7 @@ fn run_verify_release(args: &[String]) -> Result<()> {
             judgments_provenance: &judgments_provenance,
             relations_provenance: &relations_provenance,
             live_input_files: &live_input_files,
+            now_unix,
         },
     )?;
     verify_report.print();

@@ -141,9 +141,16 @@ const DICT = {
   relationEquivalent: { ja: "同値の可能性がある概念:", en: "Possibly equivalent concept:" },
   relationConfirmed: { ja: "統計・本文が一致", en: "stats + text agree" },
   relationGrounded: { ja: "本文の一文のみ", en: "text only" },
+  /** P6.3（`docs/P6_3_STATUS.md`）: `mathesis-provenance promote-review`で
+   *  本人確認済みレビューにより昇格した意味的関係のバッジ。 */
+  relationReviewed: { ja: "本人確認済みレビューで承認", en: "authenticated review" },
   relationBadgeHint: {
     ja: "実測精度は約50%（38件の手動確認、当初36%から改善）。事実の確認ではなく、統計的な傾向と論文中の一文が一致したという意味——下の一文を自分で読んで判断してください。",
     en: "Measured precision ~50% (38 hand-checked samples, up from an initial 36%). This is not a verified fact — it means a statistical signal and one sentence from a paper agree. Read the sentence below and judge for yourself.",
+  },
+  relationReviewedBadgeHint: {
+    ja: "本文からの自動抽出ではなく、人が読んで承認した判断です。詳細（承認者・資格・日付・リリース）は「Provenance」を開いて確認してください。",
+    en: "Not an automatic text extraction — a human reviewer read this and accepted it. Open \"Provenance\" for who, under what authority, when, and against which release.",
   },
   samplePapersLoading: { ja: "出典論文を読み込み中…", en: "Loading source papers…" },
   concentrationHint: {

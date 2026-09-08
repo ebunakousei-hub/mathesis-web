@@ -226,10 +226,13 @@ fn assertion_evidence_and_review_round_trip() {
             assertion_id: assertion,
             decision: ReviewOutcome::Accept,
             reviewer_id: Some("reviewer-1".into()),
+            authorization_level: Some("maintainer".into()),
             scope: Some("t".into()),
             rationale: Some("looks right".into()),
             decided_at_unix: 42,
             dataset_version: None,
+            expires_at_unix: None,
+            supersedes_review_id: None,
         })
         .unwrap();
     let decisions = store.review_decisions_for(assertion).unwrap();

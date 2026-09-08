@@ -220,6 +220,13 @@ impl EvidenceKind {
 }
 
 /// ARCHITECTURE_NEXT.md §10の決定outcome（accept/reject/split/merge/needs expert）。
+/// P6.3（`docs/P6_3_STATUS.md`）: `Supersede`/`Revoke`を追加——レビューは
+/// 追記専用ログなので、既存行を書き換える代わりに新しい行を積む。
+/// `Supersede`は「新しい判断で古い判断を置き換える」(実質的にはAcceptと同じ
+/// 信頼付与効果を持つが、`supersedes_review_id`で何を置き換えるか明示する)、
+/// `Revoke`は「以前のAcceptを撤回する」(信頼を再び剥がすだけで新しい判断は
+/// 主張しない)。ゲート判定(`review.rs::is_authenticated_accept`)は
+/// `{Accept, Supersede}`だけを信頼付与とみなす。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum ReviewOutcome {
     Accept,
@@ -227,6 +234,8 @@ pub enum ReviewOutcome {
     Split,
     Merge,
     NeedsExpert,
+    Supersede,
+    Revoke,
 }
 
 impl ReviewOutcome {
@@ -237,6 +246,8 @@ impl ReviewOutcome {
             ReviewOutcome::Split => "split",
             ReviewOutcome::Merge => "merge",
             ReviewOutcome::NeedsExpert => "needs_expert",
+            ReviewOutcome::Supersede => "supersede",
+            ReviewOutcome::Revoke => "revoke",
         }
     }
 
@@ -247,6 +258,8 @@ impl ReviewOutcome {
             "split" => ReviewOutcome::Split,
             "merge" => ReviewOutcome::Merge,
             "needs_expert" => ReviewOutcome::NeedsExpert,
+            "supersede" => ReviewOutcome::Supersede,
+            "revoke" => ReviewOutcome::Revoke,
             _ => return None,
         })
     }
@@ -398,15 +411,28 @@ pub struct Evidence {
     pub dependency_origin: Option<String>,
 }
 
+/// P6.3（`docs/P6_3_STATUS.md`）: 本人確認済みレビューの記録。
+/// `authorization_level`は「誰が承認したか」(`reviewer_id`)と別に
+/// 「どんな資格で承認したか」を残す——空/`None`のままではゲートが
+/// 信頼を認めない(`review.rs::is_authenticated_accept`)。値そのものの
+/// 語彙(例: "maintainer"/"domain-expert")はこの増分では固定しない——
+/// 実在しない権限階層を捏造しないため、文字列として受け取るだけに留める。
+/// `expires_at_unix`は任意の失効時刻、`supersedes_review_id`は
+/// 「この行が置き換える/撤回する過去の判断」への監査用リンク
+/// (ゲート判定自体は時刻順の「最新の行」で決まるので、この列を
+/// 辿らなくても正しく動く——あくまで人間が読む監査証跡)。
 #[derive(Debug, Clone)]
 pub struct NewReviewDecision {
     pub assertion_id: AssertionId,
     pub decision: ReviewOutcome,
     pub reviewer_id: Option<String>,
+    pub authorization_level: Option<String>,
     pub scope: Option<String>,
     pub rationale: Option<String>,
     pub decided_at_unix: i64,
     pub dataset_version: Option<String>,
+    pub expires_at_unix: Option<i64>,
+    pub supersedes_review_id: Option<ReviewId>,
 }
 
 #[derive(Debug, Clone)]
@@ -415,8 +441,11 @@ pub struct ReviewDecision {
     pub assertion_id: AssertionId,
     pub decision: ReviewOutcome,
     pub reviewer_id: Option<String>,
+    pub authorization_level: Option<String>,
     pub scope: Option<String>,
     pub rationale: Option<String>,
     pub decided_at_unix: i64,
     pub dataset_version: Option<String>,
+    pub expires_at_unix: Option<i64>,
+    pub supersedes_review_id: Option<ReviewId>,
 }

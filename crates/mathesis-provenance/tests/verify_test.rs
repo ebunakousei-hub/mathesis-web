@@ -104,7 +104,7 @@ fn happy_path_passes_every_check() {
 
     let report = verify_release(
         &prov,
-        &VerifyInputs { manifest: &manifest, judgments_provenance: &judgments, relations_provenance: &relations, live_input_files: &[] },
+        &VerifyInputs { manifest: &manifest, judgments_provenance: &judgments, relations_provenance: &relations, live_input_files: &[], now_unix: 0 },
     )
     .unwrap();
     assert!(report.is_ok(), "expected clean pass, got: {:?}", report.failures);
@@ -125,7 +125,7 @@ fn detects_sidecar_from_a_different_release() {
 
     let report = verify_release(
         &prov,
-        &VerifyInputs { manifest: &manifest, judgments_provenance: &judgments, relations_provenance: &relations, live_input_files: &[] },
+        &VerifyInputs { manifest: &manifest, judgments_provenance: &judgments, relations_provenance: &relations, live_input_files: &[], now_unix: 0 },
     )
     .unwrap();
     assert!(!report.is_ok());
@@ -144,7 +144,7 @@ fn detects_missing_assertion() {
 
     let report = verify_release(
         &prov,
-        &VerifyInputs { manifest: &manifest, judgments_provenance: &judgments, relations_provenance: &relations, live_input_files: &[] },
+        &VerifyInputs { manifest: &manifest, judgments_provenance: &judgments, relations_provenance: &relations, live_input_files: &[], now_unix: 0 },
     )
     .unwrap();
     assert!(!report.is_ok());
@@ -178,7 +178,7 @@ fn detects_assertion_without_evidence() {
 
     let report = verify_release(
         &prov,
-        &VerifyInputs { manifest: &manifest, judgments_provenance: &judgments, relations_provenance: &relations, live_input_files: &[] },
+        &VerifyInputs { manifest: &manifest, judgments_provenance: &judgments, relations_provenance: &relations, live_input_files: &[], now_unix: 0 },
     )
     .unwrap();
     assert!(!report.is_ok());
@@ -250,7 +250,7 @@ fn detects_ambiguous_duplicate_identity_key() {
 
     let report = verify_release(
         &prov,
-        &VerifyInputs { manifest: &manifest, judgments_provenance: &judgments, relations_provenance: &relations, live_input_files: &[] },
+        &VerifyInputs { manifest: &manifest, judgments_provenance: &judgments, relations_provenance: &relations, live_input_files: &[], now_unix: 0 },
     )
     .unwrap();
     assert!(!report.is_ok());
@@ -271,7 +271,7 @@ fn detects_counts_mismatch() {
 
     let report = verify_release(
         &prov,
-        &VerifyInputs { manifest: &manifest, judgments_provenance: &judgments, relations_provenance: &relations, live_input_files: &[] },
+        &VerifyInputs { manifest: &manifest, judgments_provenance: &judgments, relations_provenance: &relations, live_input_files: &[], now_unix: 0 },
     )
     .unwrap();
     assert!(!report.is_ok());
@@ -295,7 +295,7 @@ fn detects_input_file_hash_drift() {
 
     let report = verify_release(
         &prov,
-        &VerifyInputs { manifest: &manifest, judgments_provenance: &judgments, relations_provenance: &relations, live_input_files: &live },
+        &VerifyInputs { manifest: &manifest, judgments_provenance: &judgments, relations_provenance: &relations, live_input_files: &live, now_unix: 0 },
     )
     .unwrap();
     assert!(!report.is_ok());
@@ -316,7 +316,7 @@ fn detects_manifest_release_id_mismatch_against_db() {
 
     let report = verify_release(
         &prov,
-        &VerifyInputs { manifest: &manifest, judgments_provenance: &judgments, relations_provenance: &relations, live_input_files: &[] },
+        &VerifyInputs { manifest: &manifest, judgments_provenance: &judgments, relations_provenance: &relations, live_input_files: &[], now_unix: 0 },
     )
     .unwrap();
     assert!(!report.is_ok());
@@ -356,6 +356,7 @@ fn rejects_catalog_with_unresolved_assertion_endpoint() {
             judgments_provenance: &base_judgments_sidecar(assertion_id),
             relations_provenance: &empty_relations_sidecar(),
             live_input_files: &[],
+            now_unix: 0,
         },
     )
     .unwrap();
@@ -398,6 +399,7 @@ fn detects_missing_entity_id_as_drift_once_the_catalog_can_resolve_both_endpoint
             judgments_provenance: &base_judgments_sidecar(assertion_id),
             relations_provenance: &empty_relations_sidecar(),
             live_input_files: &[],
+            now_unix: 0,
         },
     )
     .unwrap();
@@ -436,6 +438,7 @@ fn backfilling_before_verify_release_clears_the_drift_that_would_otherwise_be_re
             judgments_provenance: &base_judgments_sidecar(assertion_id),
             relations_provenance: &empty_relations_sidecar(),
             live_input_files: &[],
+            now_unix: 0,
         },
     )
     .unwrap();
@@ -458,6 +461,7 @@ fn rejects_manifest_with_unknown_mapping_policy() {
             judgments_provenance: &base_judgments_sidecar(assertion_id),
             relations_provenance: &empty_relations_sidecar(),
             live_input_files: &[],
+            now_unix: 0,
         },
     )
     .unwrap();
@@ -510,6 +514,7 @@ fn rejects_a_default_traversal_assertion_backed_only_by_text_extraction_evidence
             judgments_provenance: &base_judgments_sidecar(assertion_id.0),
             relations_provenance: &empty_relations_sidecar(),
             live_input_files: &[],
+            now_unix: 0,
         },
     )
     .unwrap();
@@ -559,7 +564,8 @@ fn rejects_a_default_traversal_assertion_whose_review_decision_has_no_reviewer_i
     prov.insert_review_decision(&NewReviewDecision {
         assertion_id, decision: ReviewOutcome::Accept,
         reviewer_id: None, // 承認者不明のまま
-        scope: None, rationale: None, decided_at_unix: 0, dataset_version: None,
+        authorization_level: None, scope: None, rationale: None, decided_at_unix: 0,
+        dataset_version: None, expires_at_unix: None, supersedes_review_id: None,
     })
     .unwrap();
 
@@ -571,6 +577,7 @@ fn rejects_a_default_traversal_assertion_whose_review_decision_has_no_reviewer_i
             judgments_provenance: &JudgmentsProvenanceExport { release_tag: "t".into(), release_git_commit: None, dependencies: vec![], citations: vec![], morphisms: vec![] },
             relations_provenance: &empty_relations_sidecar(),
             live_input_files: &[],
+            now_unix: 0,
         },
     )
     .unwrap();
@@ -649,7 +656,8 @@ fn accepts_default_traversal_assertions_with_qualifying_evidence() {
     .unwrap();
     prov.insert_review_decision(&NewReviewDecision {
         assertion_id: reviewed, decision: ReviewOutcome::Accept, reviewer_id: Some("alice@example.invalid".into()),
-        scope: None, rationale: Some("checked by hand".into()), decided_at_unix: 0, dataset_version: None,
+        authorization_level: Some("maintainer".into()), scope: None, rationale: Some("checked by hand".into()),
+        decided_at_unix: 0, dataset_version: Some("t".into()), expires_at_unix: None, supersedes_review_id: None,
     })
     .unwrap();
 
@@ -661,6 +669,7 @@ fn accepts_default_traversal_assertions_with_qualifying_evidence() {
             judgments_provenance: &base_judgments_sidecar(formal.0),
             relations_provenance: &empty_relations_sidecar(),
             live_input_files: &[],
+            now_unix: 0,
         },
     )
     .unwrap();
@@ -720,6 +729,7 @@ fn rejects_a_default_traversal_assertion_whose_formal_evidence_has_no_reproducib
             judgments_provenance: &base_judgments_sidecar(assertion_id.0),
             relations_provenance: &empty_relations_sidecar(),
             live_input_files: &[],
+            now_unix: 0,
         },
     )
     .unwrap();
@@ -780,6 +790,7 @@ fn rejects_a_default_traversal_assertion_whose_formal_evidence_used_a_different_
             judgments_provenance: &base_judgments_sidecar(assertion_id.0),
             relations_provenance: &empty_relations_sidecar(),
             live_input_files: &[],
+            now_unix: 0,
         },
     )
     .unwrap();

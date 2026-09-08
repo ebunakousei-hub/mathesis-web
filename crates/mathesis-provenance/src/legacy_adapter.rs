@@ -269,10 +269,16 @@ pub fn import_graph(
                 assertion_id,
                 decision: ReviewOutcome::Accept,
                 reviewer_id: None,
+                // P6.3: レガシー移行行は「誰の資格で」承認されたか分からない
+                // ——`None`のまま残し、リリースゲートが本人確認済みとして
+                // 数えないようにする(捏造しない)。
+                authorization_level: None,
                 scope: Some(release_tag.to_string()),
                 rationale: m.rationale.clone(),
                 decided_at_unix: m.created_at,
                 dataset_version: None,
+                expires_at_unix: None,
+                supersedes_review_id: None,
             })?;
             stats.review_decisions_created += 1;
         }

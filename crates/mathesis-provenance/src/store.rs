@@ -152,6 +152,7 @@ impl ProvenanceStore {
         conn.execute_batch(SCHEMA)?;
         Self::ensure_assertion_entity_columns(&conn)?;
         Self::ensure_p6_1_columns(&conn)?;
+        Self::ensure_p6_3_columns(&conn)?;
         Ok(ProvenanceStore { conn })
     }
 
@@ -196,12 +197,34 @@ impl ProvenanceStore {
         Ok(())
     }
 
+    /// P6.3（`docs/P6_3_STATUS.md`）: `ensure_p6_1_columns`と同じ「追加のみ・
+    /// 冪等ALTER」パターン。本人確認済みレビューに「どんな資格で承認したか」
+    /// (`authorization_level`)・「いつ失効するか」(`expires_at_unix`)・
+    /// 「どの過去の判断を置き換えるか」(`supersedes_review_id`)を追加する。
+    fn ensure_p6_3_columns(conn: &Connection) -> Result<()> {
+        let review_columns: std::collections::HashSet<String> = conn
+            .prepare("PRAGMA table_info(review_decisions)")?
+            .query_map([], |row| row.get::<_, String>(1))?
+            .collect::<rusqlite::Result<_>>()?;
+        if !review_columns.contains("authorization_level") {
+            conn.execute("ALTER TABLE review_decisions ADD COLUMN authorization_level TEXT", [])?;
+        }
+        if !review_columns.contains("expires_at_unix") {
+            conn.execute("ALTER TABLE review_decisions ADD COLUMN expires_at_unix INTEGER", [])?;
+        }
+        if !review_columns.contains("supersedes_review_id") {
+            conn.execute("ALTER TABLE review_decisions ADD COLUMN supersedes_review_id INTEGER REFERENCES review_decisions(id)", [])?;
+        }
+        Ok(())
+    }
+
     pub fn open_in_memory() -> Result<Self> {
         let conn = Connection::open_in_memory()?;
         conn.execute_batch("PRAGMA foreign_keys = ON;")?;
         conn.execute_batch(SCHEMA)?;
         Self::ensure_assertion_entity_columns(&conn)?;
         Self::ensure_p6_1_columns(&conn)?;
+        Self::ensure_p6_3_columns(&conn)?;
         Ok(ProvenanceStore { conn })
     }
 

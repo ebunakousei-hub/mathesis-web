@@ -42,9 +42,26 @@ pub struct EvidenceDetail {
 pub struct ReviewDecisionDetail {
     pub decision: String,
     pub reviewer_id: Option<String>,
+    /// P6.3（`docs/P6_3_STATUS.md`）: 承認者が「どんな資格で」承認したか。
+    /// `None`/空文字列はリリースゲートが本人確認済みと認めない
+    /// （`review::is_authenticated_accept`）——UIもそれをそのまま表示する。
+    pub authorization_level: Option<String>,
     pub scope: Option<String>,
     pub rationale: Option<String>,
     pub decided_at_unix: i64,
+    /// P6.3: このレビューが「見た」リリースタグ。フロントエンドは
+    /// `AssertionDetail.releaseTag`と突き合わせて「別リリース時点の
+    /// レビューが今のリリースに横流しされていないか」(staleness)を
+    /// 判定できる——サーバ側で真偽値化せず生の文字列のまま渡す。
+    pub dataset_version: Option<String>,
+    pub expires_at_unix: Option<i64>,
+    /// P6.3: この判断が本人確認済みaccept/supersedeとしてリリースゲートを
+    /// 通るかどうか——`review::is_authenticated_accept`をこの1件だけに
+    /// 適用した結果。全ての判断行がこの意味で「有効」なわけではない
+    /// (時系列で後から積まれたrevoke/rejectに効力を奪われた古いaccept等)
+    /// ——`eligible_for_default_traversal`と同じ理由で、UIが同じロジックを
+    /// JS側に再実装しなくて済むようサーバ側で計算して渡す。
+    pub is_current_authenticated_accept: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -152,17 +169,37 @@ pub fn entity_label_with_origin(
     Ok((entity.map(|e| e.display_label), origin))
 }
 
-/// `evidence_details_for`と同じ理由で共有する。
-pub fn review_decision_details_for(prov: &ProvenanceStore, id: AssertionId) -> anyhow::Result<Vec<ReviewDecisionDetail>> {
-    Ok(prov
-        .review_decisions_for(id)?
+/// `evidence_details_for`と同じ理由で共有する。`release_tag`/`now_unix`は
+/// `review::is_authenticated_accept`（P6.3、"no drift"・失効判定）にそのまま
+/// 渡す——ここで真偽値化してしまえば、ゲートと詳細パネルのロジックが
+/// 将来ずれる余地ができる。
+pub fn review_decision_details_for(
+    prov: &ProvenanceStore,
+    id: AssertionId,
+    release_tag: &str,
+    now_unix: i64,
+) -> anyhow::Result<Vec<ReviewDecisionDetail>> {
+    let decisions = prov.review_decisions_for(id)?;
+    // P6.3: 時系列で最後の1件だけが「今の実効判断」——`review::
+    // effective_review_decision`と同じ定義をここでも使う(古いacceptに
+    // 誤ってcurrent=trueを付けない)。
+    let effective_id = decisions.last().map(|d| d.id);
+    Ok(decisions
         .into_iter()
-        .map(|r| ReviewDecisionDetail {
-            decision: r.decision.as_str().to_string(),
-            reviewer_id: r.reviewer_id,
-            scope: r.scope,
-            rationale: r.rationale,
-            decided_at_unix: r.decided_at_unix,
+        .map(|r| {
+            let is_current_authenticated_accept =
+                Some(r.id) == effective_id && crate::review::is_authenticated_accept(&r, now_unix, release_tag);
+            ReviewDecisionDetail {
+                decision: r.decision.as_str().to_string(),
+                reviewer_id: r.reviewer_id,
+                authorization_level: r.authorization_level,
+                scope: r.scope,
+                rationale: r.rationale,
+                decided_at_unix: r.decided_at_unix,
+                dataset_version: r.dataset_version,
+                expires_at_unix: r.expires_at_unix,
+                is_current_authenticated_accept,
+            }
         })
         .collect())
 }
@@ -173,6 +210,7 @@ pub fn review_decision_details_for(prov: &ProvenanceStore, id: AssertionId) -> a
 pub fn export_assertion_details(
     prov: &ProvenanceStore,
     release_tag: &str,
+    now_unix: i64,
     assertion_ids: impl IntoIterator<Item = i64>,
 ) -> anyhow::Result<BTreeMap<String, AssertionDetail>> {
     let mut out = BTreeMap::new();
@@ -180,7 +218,7 @@ pub fn export_assertion_details(
         let id = AssertionId(raw_id);
         let Some(assertion) = prov.try_get_assertion(id)? else { continue };
         let evidence = evidence_details_for(prov, id)?;
-        let review_decisions = review_decision_details_for(prov, id)?;
+        let review_decisions = review_decision_details_for(prov, id, release_tag, now_unix)?;
         let (subject_label, subject_label_origin) = entity_label_with_origin(prov, assertion.subject_entity_id)?;
         let (object_label, object_label_origin) = entity_label_with_origin(prov, assertion.object_entity_id)?;
         out.insert(

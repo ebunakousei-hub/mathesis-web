@@ -794,6 +794,14 @@ table.demo-table code {
   border: 1px solid var(--panel-border);
 }
 
+/* P6.3（docs/P6_3_STATUS.md）: provenancePanelの.prov-badge-trustedと同じ
+   緑——本人確認済みレビューで信頼を得た関係を、テキスト抽出由来の
+   confirmed/groundedと視覚的に区別する。 */
+.dt-relation-badge-reviewed {
+  color: #8fd39e;
+  border: 1px solid #3a7a4a;
+}
+
 .dt-relation-evidence {
   margin: 0;
   font-size: 11px;

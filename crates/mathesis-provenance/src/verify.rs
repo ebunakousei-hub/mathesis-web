@@ -157,9 +157,25 @@ fn verify_catalog_assertions(prov: &ProvenanceStore, release_id: i64, report: &m
 /// (b) レビューは記録されているがreviewer_idが無い(誰が承認したか
 ///     分からない)まま`reviewed`に上げてしまった
 /// といった事態が起きても、リリースを公開する前に機械的に検出する。
-fn verify_trusted_assertions_have_qualifying_evidence(prov: &ProvenanceStore, release_id: i64, report: &mut VerifyReport) -> anyhow::Result<()> {
-    use crate::model::{EvidenceKind, ReviewOutcome};
+///
+/// P6.3（`docs/P6_3_STATUS.md`）: 判定を`review.rs::is_authenticated_accept`
+/// へ委譲するよう拡張。「acceptがどこかに1件でもあれば信頼する」ではなく
+/// 「最新の実効判断(`effective_review_decision`)が、資格
+/// (`authorization_level`)を明示した本人確認済みaccept/supersedeで、
+/// 期限切れでなく、このリリースに対して行われたものか」を見る——これにより
+/// (c) revoke/rejectで後から取り消されたacceptがもう通らない、
+/// (d) 別リリース時点のレビューが確認なしに今のリリースへ横流しされない、
+/// の2つを新たに検出する。
+fn verify_trusted_assertions_have_qualifying_evidence(
+    prov: &ProvenanceStore,
+    release_id: i64,
+    release_tag: &str,
+    now_unix: i64,
+    report: &mut VerifyReport,
+) -> anyhow::Result<()> {
+    use crate::model::EvidenceKind;
     use crate::relation_policy::{traversal_policy, TraversalPolicy};
+    use crate::review::is_authenticated_accept;
 
     for assertion in prov.list_assertions_for_release(crate::model::ReleaseId(release_id))? {
         if traversal_policy(assertion.predicate, assertion.epistemic_state) != TraversalPolicy::DefaultTraversal {
@@ -167,14 +183,13 @@ fn verify_trusted_assertions_have_qualifying_evidence(prov: &ProvenanceStore, re
         }
         let has_formal_evidence = prov.evidence_for(assertion.id)?.iter().any(|e| e.evidence_kind == EvidenceKind::FormalExport);
         let has_authenticated_review = prov
-            .review_decisions_for(assertion.id)?
-            .iter()
-            .any(|r| r.decision == ReviewOutcome::Accept && r.reviewer_id.is_some());
+            .effective_review_decision(assertion.id)?
+            .is_some_and(|d| is_authenticated_accept(&d, now_unix, release_tag));
         if !has_formal_evidence && !has_authenticated_review {
             report.fail(
                 "trusted_assertion_missing_qualifying_evidence",
                 format!(
-                    "assertion #{}: traversal_policy=default_traversal but has neither formal_export evidence nor an authenticated (reviewer_id-bearing) accept decision",
+                    "assertion #{}: traversal_policy=default_traversal but has neither formal_export evidence nor a current, authenticated accept decision for release '{release_tag}'",
                     assertion.id.0
                 ),
             );
@@ -274,6 +289,11 @@ pub struct VerifyInputs<'a> {
     /// 与えられていれば、マニフェストに記録済みのハッシュと突き合わせる
     /// （「サイドカーが別のリリース/入力から生成された」の検査）。
     pub live_input_files: &'a [InputFileHash],
+    /// P6.3（`docs/P6_3_STATUS.md`）: レビューの`expires_at_unix`が
+    /// 期限切れかどうかを判定する基準時刻。呼び出し側(CLI)が渡す——
+    /// このモジュール自身は時計を読まない(他のコマンドが`SystemTime::now()`を
+    /// 呼び出し元で計算するのと同じ流儀、テストからも固定できる)。
+    pub now_unix: i64,
 }
 
 pub fn verify_release(prov: &ProvenanceStore, inputs: &VerifyInputs) -> anyhow::Result<VerifyReport> {
@@ -392,7 +412,7 @@ pub fn verify_release(prov: &ProvenanceStore, inputs: &VerifyInputs) -> anyhow::
     // 4.5. Priority 2, step 2: 既定トラバース対象を裏付ける証拠の有無
     // （カタログの有無に関わらず常に検査する——正式なEvidence/認証済み
     // レビューの有無はentity catalogと独立の話のため）。
-    if let Err(e) = verify_trusted_assertions_have_qualifying_evidence(prov, m.release_id, &mut report) {
+    if let Err(e) = verify_trusted_assertions_have_qualifying_evidence(prov, m.release_id, &m.release_tag, inputs.now_unix, &mut report) {
         report.fail("trusted_evidence_query_error", e.to_string());
     }
 

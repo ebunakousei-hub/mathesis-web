@@ -81,10 +81,31 @@ function renderEvidence(e: AssertionDetail["evidence"][number]): string {
     </li>`;
 }
 
-function renderReview(r: AssertionDetail["reviewDecisions"][number]): string {
+/**
+ * P6.3（`docs/P6_3_STATUS.md`）: 1件のレビュー行——誰が・どんな資格で・
+ * いつ・どのリリースを見て判断したかと、それが今なおリリースゲートを
+ * 通る本人確認済みaccept/supersedeか（`isCurrentAuthenticatedAccept`、
+ * サーバ側`review::is_authenticated_accept`と同じ判定）を示す。
+ * `assertionReleaseTag`との食い違いは、このレビューが別リリース時点の
+ * ものだった("stale")ことの合図——真偽値化せず、読者が自分で見比べられる
+ * よう生の値のまま両方出す。
+ */
+function renderReview(r: AssertionDetail["reviewDecisions"][number], assertionReleaseTag: string): string {
+  const decidedAt = new Date(r.decidedAtUnix * 1000).toISOString().slice(0, 10);
+  const isStaleRelease = r.datasetVersion !== null && r.datasetVersion !== assertionReleaseTag;
+  const isExpired = r.expiresAtUnix !== null && r.expiresAtUnix * 1000 < Date.now();
   return `
     <li class="prov-review-item">
-      <div>${escapeHtml(r.decision)}${r.reviewerId ? ` by ${escapeHtml(r.reviewerId)}` : " (reviewer unknown)"}</div>
+      <div>
+        <b>${escapeHtml(r.decision)}</b>${r.reviewerId ? ` by ${escapeHtml(r.reviewerId)}` : " (reviewer unknown)"}
+        ${r.authorizationLevel ? ` <span class="prov-muted">(${escapeHtml(r.authorizationLevel)})</span>` : ""}
+        <span class="prov-badge ${r.isCurrentAuthenticatedAccept ? "prov-badge-trusted" : "prov-badge-untrusted"}">
+          ${r.isCurrentAuthenticatedAccept ? "counts toward trust" : "does not count toward trust"}
+        </span>
+      </div>
+      <div class="prov-muted">decided ${decidedAt}${r.datasetVersion ? ` · reviewed against release '${escapeHtml(r.datasetVersion)}'` : ""}</div>
+      ${isStaleRelease ? `<div class="prov-muted">⚠ this release ('${escapeHtml(assertionReleaseTag)}') differs from the one this review saw ('${escapeHtml(r.datasetVersion!)}') — stale.</div>` : ""}
+      ${isExpired ? `<div class="prov-muted">⚠ expired.</div>` : ""}
       ${r.rationale ? `<div class="prov-muted">${escapeHtml(r.rationale)}</div>` : ""}
     </li>`;
 }
@@ -133,7 +154,7 @@ function renderDetail(d: AssertionDetail): string {
         <ul class="prov-evidence-list">${d.evidence.map(renderEvidence).join("")}</ul>
         ${
           d.reviewDecisions.length > 0
-            ? `<div class="prov-section-title">Review decisions (${d.reviewDecisions.length})</div><ul class="prov-review-list">${d.reviewDecisions.map(renderReview).join("")}</ul>`
+            ? `<div class="prov-section-title">Review decisions (${d.reviewDecisions.length})</div><ul class="prov-review-list">${d.reviewDecisions.map((r) => renderReview(r, d.releaseTag)).join("")}</ul>`
             : ""
         }
         <p class="prov-caveat">Traceable to a source ≠ independently reviewed ≠ formally verified ≠ mathematically true. This panel shows only where the claim above came from and how confident the extractor was — not whether it is correct.</p>

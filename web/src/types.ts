@@ -143,7 +143,9 @@ export interface AliasExport {
  *
  * **根拠文を持つものだけがここに来る**——統計のみで根拠文の無いProposedは
  * 含まれない。`status`は"confirmed"（分布統計と本文の一文が一致）か
- * "grounded"（本文の一文のみ）。`confidence`はConfirmedにしか無い実測値
+ * "grounded"（本文の一文のみ）か、P6.3で加わった"reviewed"（本人確認済み
+ * レビューで昇格した意味的関係——`mathesis-provenance promote-review`、
+ * `docs/P6_3_STATUS.md`）。`confidence`はConfirmedにしか無い実測値
  * （invCLメトリック）——Groundedは`null`（旧`taxonomy.relations.json`が
  * 出していた固定1.0のプレースホルダは、ここでは捏造しない）。手動サンプルで
  * 確認した実測精度は約50%（当初36%、3回の的を絞った修正後、
@@ -155,10 +157,18 @@ export interface ProvenanceRelationEdge {
   subject: string;
   object: string;
   kind: "specialization_of" | "equivalent_to";
-  status: "confirmed" | "grounded";
+  status: "confirmed" | "grounded" | "reviewed";
   confidence: number | null;
   evidenceSentence: string;
   evidenceArxivId: string;
+  /**
+   * P6.3: `DependencyEdge`/`MorphismEdge`と同じ語彙。現時点でこの画面
+   * (`dynamicTaxonomy.ts`の概念詳細)自体には「trusted only」トグルは
+   * 無い(リネージビューだけが持つ、`docs/P5_PLAN.md`)——このフィールドは
+   * 将来そのトグルを追加する際に他の2種と揃えるためのデータで、今回の
+   * 増分ではまだUIから参照しない。
+   */
+  traversalPolicy: "excluded" | "visible_only" | "default_traversal" | "formal_only";
 }
 
 export interface TaxonomyExport {
@@ -306,9 +316,29 @@ export interface EvidenceDetail {
 export interface ReviewDecisionDetail {
   decision: string;
   reviewerId: string | null;
+  /**
+   * P6.3（`docs/P6_3_STATUS.md`）: 承認者が「どんな資格で」承認したか。
+   * `null`はリリースゲートが本人確認済みと認めない（審査済みの身元だけでは
+   * 足りない——資格の表明も必須）。
+   */
+  authorizationLevel: string | null;
   scope: string | null;
   rationale: string | null;
   decidedAtUnix: number;
+  /**
+   * P6.3: このレビューが「見た」リリースタグ。`AssertionDetail.releaseTag`と
+   * 食い違えば、別リリース時点のレビューがそのまま今のリリースへ横流し
+   * されていないかを読者自身が確かめられる。
+   */
+  datasetVersion: string | null;
+  expiresAtUnix: number | null;
+  /**
+   * P6.3: サーバ側(`review::is_authenticated_accept`)が判定済みの
+   * 「今、これがリリースゲートを通す本人確認済みaccept/supersedeか」。
+   * 同じ判断ログのうち最新の1件だけが`true`になりうる——古いacceptが
+   * 後からrevoke/rejectで効力を失っていても行自体は残る(追記専用ログ)。
+   */
+  isCurrentAuthenticatedAccept: boolean;
 }
 
 export interface AssertionDetail {

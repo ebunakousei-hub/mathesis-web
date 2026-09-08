@@ -86,6 +86,13 @@ pub struct RelationEdge {
     pub confidence: Option<f64>,
     pub evidence_sentence: String,
     pub evidence_arxiv_id: String,
+    /// P6.3（`docs/P6_3_STATUS.md`）: `DependencyEdge`/`MorphismEdge`と同じ
+    /// 語彙——このクレートを追加するまで`RelationEdge`だけこのフィールドを
+    /// 持っていなかった(概念関係には「本人確認済みレビューで信頼を得る」
+    /// 経路が無かったため、フィールド自体に意味が無かった)。今は
+    /// `promote-review`で意味的関係もreviewed/verifiedへ昇格できるため、
+    /// 他の2種と揃える。
+    pub traversal_policy: String,
 }
 
 fn morphism_kind_str(k: RelationKind) -> Option<&'static str> {
@@ -151,7 +158,12 @@ pub fn build_dependency_edges(prov: &ProvenanceStore, assertions: &[RelationAsse
 /// （`docs/DATA_DICTIONARY.md`「Resolved decisions #4」——legacy
 /// `Accepted`は`epistemic_state: proposed`のまま、`ReviewDecision{accept}`
 /// が別途あるかどうかで見分ける）。
-pub fn build_morphism_edges(prov: &ProvenanceStore, assertions: &[RelationAssertion]) -> anyhow::Result<Vec<MorphismEdge>> {
+pub fn build_morphism_edges(
+    prov: &ProvenanceStore,
+    assertions: &[RelationAssertion],
+    release_tag: &str,
+    now_unix: i64,
+) -> anyhow::Result<Vec<MorphismEdge>> {
     let mut out = Vec::new();
     for a in assertions {
         let Some(kind) = morphism_kind_str(a.predicate) else { continue };
@@ -161,7 +173,11 @@ pub fn build_morphism_edges(prov: &ProvenanceStore, assertions: &[RelationAssert
         let Some(src) = prov.judgment_id_for_entity(subject_entity_id)? else { continue };
         let Some(dst) = prov.judgment_id_for_entity(object_entity_id)? else { continue };
         let evidence = evidence_details_for(prov, a.id)?;
-        let review_decisions = review_decision_details_for(prov, a.id)?;
+        // P6.3: `status`は昔ながらの「acceptがどこかに1件でもあれば
+        // accepted」のまま——本人確認済み/失効/リリース一致まで見る厳密な
+        // 判定(`is_current_authenticated_accept`)はリリースゲートと
+        // provenanceパネルの仕事で、この表示専用フィールドの意味は変えない。
+        let review_decisions = review_decision_details_for(prov, a.id, release_tag, now_unix)?;
         let origin_evidence =
             evidence.iter().find(|e| e.evidence_kind == "reviewer_note" || e.evidence_kind == "model_output");
         let origin = match origin_evidence.map(|e| e.evidence_kind.as_str()) {
@@ -196,6 +212,13 @@ pub fn build_morphism_edges(prov: &ProvenanceStore, assertions: &[RelationAssert
 /// 同じ「読者が自分の目で確かめられる根拠がある行だけを見せる」方針
 /// （実測精度約50%、`relations.rs`冒頭コメント参照）。
 ///
+/// P6.3: `reviewer_note`のEvidenceも同じ理由で受理する——
+/// `promote-review`で作る本人確認済みレビュー由来のassertionは
+/// (`store.rs`のSCHEMAコメントが明記する唯一の例外どおり)`source_span`を
+/// 持たず、代わりにレビューの根拠(rationale)を`reviewer_note`として持つ。
+/// ここで弾くと、レビューで信頼を得たはずの意味的関係がリリースゲートは
+/// 通るのに`relations.json`に一切現れない、という矛盾が起きる。
+///
 /// P5, Item 2 step 4: `subject`/`object`は`subject_ref`の文字列（表記ゆれの
 /// ままのことがある）ではなく、`subject_entity_id`が指すエンティティの
 /// `display_label`(=Entity Resolutionが選んだ代表表記)を出す。実データで
@@ -213,30 +236,62 @@ pub fn build_relation_edges(prov: &ProvenanceStore, assertions: &[RelationAssert
         let Some(kind) = relation_kind_str(a.predicate) else { continue };
         let Some(subject_entity_id) = a.subject_entity_id else { continue };
         let Some(object_entity_id) = a.object_entity_id else { continue };
-        let Some(subject) = prov.try_get_entity(subject_entity_id)?.map(|e| e.display_label) else { continue };
-        let Some(object) = prov.try_get_entity(object_entity_id)?.map(|e| e.display_label) else { continue };
+        let Some(subject_entity) = prov.try_get_entity(subject_entity_id)? else { continue };
+        let Some(object_entity) = prov.try_get_entity(object_entity_id)? else { continue };
+        // P6.3で判明: `Specializes`/`EquivalentTo`/`Generalizes`はjudgment同士
+        // (射)とconcept同士(型付き概念関係)の両方で使われる共有語彙
+        // （`relation_policy::valid_entity_kinds`）——`reviewer_note`証拠を
+        // 受理するようになった結果、`build_morphism_edges`側のjudgment同士の
+        // assertionが種別チェック無しにここへも紛れ込む実バグを、対抗
+        // フィクスチャ(`every_generated_edge_resolves_to_a_consistent_assertion`)
+        // が検出した。両端が本当にConcept種別のエンティティであることを
+        // 明示的に確認する。
+        if subject_entity.kind != crate::model::EntityKind::Concept || object_entity.kind != crate::model::EntityKind::Concept {
+            continue;
+        }
+        let subject = subject_entity.display_label;
+        let object = object_entity.display_label;
         let evidence = evidence_details_for(prov, a.id)?;
-        let Some(source_span) = evidence.iter().find(|e| e.evidence_kind == "source_span") else { continue };
+        let Some(grounding) = evidence
+            .iter()
+            .find(|e| e.evidence_kind == "source_span" || e.evidence_kind == "reviewer_note")
+        else {
+            continue;
+        };
         let model_output = evidence.iter().find(|e| e.evidence_kind == "model_output");
+        let status = if grounding.evidence_kind == "reviewer_note" {
+            "reviewed".to_string()
+        } else if model_output.is_some() {
+            "confirmed".to_string()
+        } else {
+            "grounded".to_string()
+        };
         out.push(RelationEdge {
             assertion_id: a.id.0,
             subject,
             object,
             kind: kind.to_string(),
-            status: if model_output.is_some() { "confirmed".to_string() } else { "grounded".to_string() },
+            status,
             confidence: model_output.and_then(|e| e.metric_value),
-            evidence_sentence: source_span.locator.clone().unwrap_or_default(),
-            evidence_arxiv_id: if source_span.source_provider == "arxiv" {
-                source_span.source_provider_id.clone()
+            evidence_sentence: grounding.locator.clone().unwrap_or_default(),
+            evidence_arxiv_id: if grounding.source_provider == "arxiv" {
+                grounding.source_provider_id.clone()
             } else {
                 String::new()
             },
+            traversal_policy: traversal_policy(a.predicate, a.epistemic_state).as_str().to_string(),
         });
     }
     // Confirmedを先に、同じstatus内は確信度の降順——旧`RelationsExport`と
     // 同じ表示順（利用者が最初に見るものが最も裏付けの強いものになるように）。
     out.sort_by(|x, y| {
-        let rank = |s: &str| if s == "confirmed" { 0 } else { 1 };
+        // P6.3: 本人確認済みレビューはLLM/検出器の"confirmed"より上位——
+        // 人間が実際に読んで判断した根拠のほうが強い。
+        let rank = |s: &str| match s {
+            "reviewed" => 0,
+            "confirmed" => 1,
+            _ => 2,
+        };
         rank(&x.status)
             .cmp(&rank(&y.status))
             .then_with(|| y.confidence.partial_cmp(&x.confidence).unwrap_or(std::cmp::Ordering::Equal))
@@ -268,10 +323,15 @@ pub fn build_web_export(prov: &ProvenanceStore, release: crate::model::ReleaseId
              before `web-export`; edges now resolve through subject_entity_id/object_entity_id, not string parsing"
         );
     }
+    let release_tag = prov.get_release(release)?.tag;
+    let now_unix = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0);
     let assertions = prov.list_assertions_for_release(release)?;
     Ok(WebExport {
         dependencies: build_dependency_edges(prov, &assertions)?,
-        morphisms: build_morphism_edges(prov, &assertions)?,
+        morphisms: build_morphism_edges(prov, &assertions, &release_tag, now_unix)?,
         relations: build_relation_edges(prov, &assertions)?,
     })
 }
@@ -518,10 +578,13 @@ mod tests {
                 assertion_id: a,
                 decision: ReviewOutcome::Accept,
                 reviewer_id: None,
+                authorization_level: None,
                 scope: None,
                 rationale: rationale.map(str::to_string),
                 decided_at_unix: 0,
                 dataset_version: None,
+                expires_at_unix: None,
+                supersedes_review_id: None,
             })
             .unwrap();
         }
@@ -545,7 +608,7 @@ mod tests {
         insert_morphism(&prov, release, source, RelationKind::Generalizes, EpistemicState::Rejected, EvidenceKind::ModelOutput, None, false);
 
         let assertions = prov.list_assertions_for_release(release).unwrap();
-        let morphisms = build_morphism_edges(&prov, &assertions).unwrap();
+        let morphisms = build_morphism_edges(&prov, &assertions, "t", 0).unwrap();
         assert_eq!(morphisms.len(), 3);
 
         let by_kind = |k: &str| morphisms.iter().find(|m| m.kind == k).unwrap();
@@ -693,7 +756,7 @@ mod tests {
 
         let assertions = prov.list_assertions_for_release(release).unwrap();
         let dependencies = build_dependency_edges(&prov, &assertions).unwrap();
-        let morphisms = build_morphism_edges(&prov, &assertions).unwrap();
+        let morphisms = build_morphism_edges(&prov, &assertions, "t", 0).unwrap();
         let relations = build_relation_edges(&prov, &assertions).unwrap();
         assert_eq!(dependencies.len(), 1);
         assert_eq!(morphisms.len(), 3);
@@ -710,7 +773,7 @@ mod tests {
             let assertion = prov.try_get_assertion(crate::model::AssertionId(m.id)).unwrap().expect("assertionId must resolve");
             assert_eq!(morphism_kind_str(assertion.predicate), Some(m.kind.as_str()));
             let evidence = evidence_details_for(&prov, assertion.id).unwrap();
-            let review = review_decision_details_for(&prov, assertion.id).unwrap();
+            let review = review_decision_details_for(&prov, assertion.id, "t", 0).unwrap();
             // originはEvidenceの種別から、statusはepistemic_state+ReviewDecisionから、
             // それぞれ独立に再計算しても`build_morphism_edges`の出力と一致するはず
             // ——ここがズレたら「DTOとdetail exportが食い違う」ことになる。

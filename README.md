@@ -64,6 +64,18 @@ Lean/Coq の証明支援系や arXiv から数学的知識を構造化し、検�
   無変化。text-only/checker-onlyの食い違いの原因はプロジェクトごとに
   異なり(汎用識別子の衝突・密なファイル内での近接誤帰属・匿名
   コンストラクタ記法によるテキスト側の不可視性)、1つの数字にまとめない）
+- **Phase 6.3: 本人確認済みレビューとリリースゲート**:
+  [docs/P6_3_STATUS.md](docs/P6_3_STATUS.md)
+  （`review_decisions`は既存(旧称Priority 2)だったが、資格
+  (`authorization_level`)・失効・リリース一致まで見る「本人確認済み
+  accept」の定義(`review::is_authenticated_accept`)と、それをリリース
+  ゲートへ確実に反映する経路が無かった——決定的だったのは、意味的関係を
+  実際に`reviewed`へ昇格させるCLI(`promote-review`)自体が存在せず、
+  本番DBのreview_decisionsが0件・reviewed/verified状態のassertionが
+  0件だったこと。実装後、本番データで実際に1件昇格・
+  `verify-release`通過・UI表示まで確認してから元に戻した(内容の採否は
+  ユーザーの判断であり、機構の検証と混同しない)。過程で`relations.json`
+  生成の実バグ2件を発見・修正）
 
 このファイルはルート直下のクレート構成の見取り図。各クレートの詳細な
 設計判断は各 `src/lib.rs` 冒頭のドキュメントコメントを参照。

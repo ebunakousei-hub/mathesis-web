@@ -1,0 +1,23 @@
+[
+  {
+    "srcId": "sample-0002",
+    "depId": "sample-0001",
+    "edgeType": "sig",
+    "role": null,
+    "viaProj": false
+  },
+  {
+    "srcId": "sample-0002",
+    "depId": "sample-0003",
+    "edgeType": "proof",
+    "role": null,
+    "viaProj": false
+  },
+  {
+    "srcId": "sample-0101",
+    "depId": "sample-9999-outside-scope",
+    "edgeType": "sig",
+    "role": null,
+    "viaProj": false
+  }
+]

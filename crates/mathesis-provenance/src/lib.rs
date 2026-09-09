@@ -31,6 +31,7 @@ pub mod msc_adapter;
 pub mod msc_classification;
 pub mod openalex_adapter;
 pub mod openalex_fetch;
+pub mod pilot_artifact;
 pub mod review;
 pub mod source_record;
 pub mod stats;

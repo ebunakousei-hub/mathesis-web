@@ -11,6 +11,7 @@ use mathesis_provenance::discovery_export::build_discovery_export;
 use mathesis_provenance::math_graph_adapter::{self, PilotEdge, PilotStatement};
 use mathesis_provenance::msc_adapter;
 use mathesis_provenance::msc_classification;
+use mathesis_provenance::pilot_artifact::{self, ScopeReport};
 use mathesis_provenance::openalex_adapter;
 use mathesis_provenance::openalex_fetch::{self, SnapshotEntry};
 use mathesis_provenance::manifest::{
@@ -146,7 +147,16 @@ fn usage() -> ! {
          \x20     4種の出典(mathesis-checker/mathesis-text/math-graph-literal/\n\
          \x20     math-graph-hierarchy)を明示的に分類し、subject/objectは\n\
          \x20     entity_label_with_originの表示名で出す。本番のdependencies.json/\n\
-         \x20     検索インデックス/既定の信頼グラフには一切書き込まない——追加専用の別ファイル。"
+         \x20     検索インデックス/既定の信頼グラフには一切書き込まない——追加専用の別ファイル。\n\
+         \x20 export-pilot-manifest --db <path> --release <tag> --dataset-revision <hash>\n\
+         \x20                       --retrieved-at <unix秒> --scope-report <path>\n\
+         \x20                       [--raw-source-file <path>]... [--index-file <path>]... --out <path>\n\
+         \x20     P8.1（docs/P8_1_STATUS.md）: オフラインTheoremGraph/Math-Graphコネクタ\n\
+         \x20     の「artifact」——隔離パイロットDB専用の自己記述マニフェスト。データセット\n\
+         \x20     URL/リビジョン・取得時刻・生ソースCSVのハッシュ・スキーマ/アダプタ版・\n\
+         \x20     ライセンス・プロジェクト別内訳・DB内の実件数・未解決/重複件数・MSC分類\n\
+         \x20     状態別件数（Lean宣言は分類対象外なので全件unavailableと正直に記録）・\n\
+         \x20     読み取りモデル(export-discoveryの出力)のハッシュを1つにまとめる。"
     );
     std::process::exit(1);
 }
@@ -178,6 +188,7 @@ fn main() -> Result<()> {
         Some("promote-review") => run_promote_review(&args[2..]),
         Some("import-math-graph") => run_import_math_graph(&args[2..]),
         Some("export-discovery") => run_export_discovery(&args[2..]),
+        Some("export-pilot-manifest") => run_export_pilot_manifest(&args[2..]),
         _ => usage(),
     }
 }
@@ -431,6 +442,66 @@ fn run_export_discovery(args: &[String]) -> Result<()> {
         export.counts.mathesis_text,
         export.counts.math_graph_literal,
         export.counts.math_graph_hierarchy,
+    );
+    Ok(())
+}
+
+/// P8.1（`docs/P8_1_STATUS.md`）: the offline TheoremGraph/Math-Graph
+/// connector artifact's self-describing release manifest. Reads real
+/// counts from the isolated pilot DB itself (never production), the
+/// Python-side scope/validation report, and hashes of both the raw
+/// source CSVs and the sibling read-model export (`export-discovery`,
+/// reused unchanged as this artifact's "small read-model prototype").
+fn run_export_pilot_manifest(args: &[String]) -> Result<()> {
+    let db = PathBuf::from(require_flag(args, "--db")?);
+    let release_tag = require_flag(args, "--release")?.to_string();
+    let dataset_revision = require_flag(args, "--dataset-revision")?.to_string();
+    let retrieved_at_unix: i64 = require_flag(args, "--retrieved-at")?
+        .parse()
+        .context("--retrieved-at はUNIX秒の整数で指定してください")?;
+    let scope_report_path = PathBuf::from(require_flag(args, "--scope-report")?);
+    let out = PathBuf::from(require_flag(args, "--out")?);
+    // 生ソースCSVは複数(--raw-source-file を繰り返し指定)。読み取りモデルの
+    // 出力(export-discoveryの出力、複数プロジェクトぶんある)も同様。
+    let raw_source_files: Vec<PathBuf> =
+        args.iter().enumerate().filter(|(_, a)| *a == "--raw-source-file").map(|(i, _)| PathBuf::from(&args[i + 1])).collect();
+    let index_files: Vec<PathBuf> =
+        args.iter().enumerate().filter(|(_, a)| *a == "--index-file").map(|(i, _)| PathBuf::from(&args[i + 1])).collect();
+
+    let prov = ProvenanceStore::open(&db).with_context(|| format!("{db:?} を開けません"))?;
+    let release = prov
+        .get_release_by_tag(&release_tag)?
+        .with_context(|| format!("release '{release_tag}' not found"))?;
+
+    let scope_report: ScopeReport = serde_json::from_slice(
+        &std::fs::read(&scope_report_path).with_context(|| format!("{scope_report_path:?} を開けません"))?,
+    )
+    .with_context(|| format!("{scope_report_path:?} のパースに失敗"))?;
+
+    let raw_source_file_hashes = raw_source_files.iter().map(|p| input_file_hash(p)).collect::<anyhow::Result<Vec<_>>>()?;
+    let generated_index_hashes = index_files.iter().map(|p| input_file_hash(p)).collect::<anyhow::Result<Vec<_>>>()?;
+
+    let generated_at_unix = SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs() as i64).unwrap_or(0);
+    let manifest = pilot_artifact::build_manifest(
+        &prov,
+        &release_tag,
+        release.id.0,
+        &dataset_revision,
+        retrieved_at_unix,
+        raw_source_file_hashes,
+        scope_report,
+        generated_index_hashes,
+        generated_at_unix,
+    )?;
+    std::fs::write(&out, serde_json::to_string_pretty(&manifest)?).with_context(|| format!("{out:?} へ書き込めません"))?;
+    println!(
+        "pilot artifact manifest: {} declarations ({} literal, {} typeclass-hierarchy, {} excluded), {} edges, {} db source records -> {out:?}",
+        manifest.totals.declarations,
+        manifest.totals.declarations_literal,
+        manifest.totals.declarations_typeclass_hierarchy,
+        manifest.totals.declarations_excluded,
+        manifest.totals.edges_imported,
+        manifest.source_record_count_in_db,
     );
     Ok(())
 }

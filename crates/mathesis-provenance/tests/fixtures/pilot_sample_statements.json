@@ -1,0 +1,54 @@
+[
+  {
+    "statementId": "sample-0001",
+    "declName": "Sample.instFakeMonoid",
+    "module": "SampleProject.Algebra.Basic",
+    "kind": "inst",
+    "filePath": "SampleProject/Algebra/Basic.lean",
+    "isInstance": true,
+    "repoSlug": "SampleMathlib",
+    "leanToolchain": "v4.2.9",
+    "mathlibRev": null,
+    "gitCommit": null,
+    "classification": "external_typeclass_hierarchy"
+  },
+  {
+    "statementId": "sample-0002",
+    "declName": "Sample.instFakeGroup",
+    "module": "SampleProject.Algebra.Basic",
+    "kind": "instance",
+    "filePath": "SampleProject/Algebra/Basic.lean",
+    "isInstance": true,
+    "repoSlug": "SampleMathlib",
+    "leanToolchain": "v4.2.9",
+    "mathlibRev": null,
+    "gitCommit": null,
+    "classification": "external_typeclass_hierarchy"
+  },
+  {
+    "statementId": "sample-0003",
+    "declName": "Sample.fake_add_comm",
+    "module": "SampleProject.Algebra.Basic",
+    "kind": "theorem",
+    "filePath": "SampleProject/Algebra/Basic.lean",
+    "isInstance": false,
+    "repoSlug": "SampleMathlib",
+    "leanToolchain": "v4.2.9",
+    "mathlibRev": null,
+    "gitCommit": null,
+    "classification": "external_literal_dependency"
+  },
+  {
+    "statementId": "sample-0101",
+    "declName": "SampleFLT.instFakeRing",
+    "module": "SampleFLT.NumberTheory.Basic",
+    "kind": "inst",
+    "filePath": "SampleFLT/NumberTheory/Basic.lean",
+    "isInstance": true,
+    "repoSlug": "SampleNonMathlibProject",
+    "leanToolchain": null,
+    "mathlibRev": null,
+    "gitCommit": null,
+    "classification": "external_typeclass_hierarchy"
+  }
+]

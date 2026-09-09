@@ -261,6 +261,7 @@ pub fn import_lean_manifest(
                 metric_name: None,
                 metric_value: None,
                 dependency_origin: Some(dep.origin.clone()),
+                external_classification: None,
             })?;
             stats.dependencies_imported += 1;
         }
@@ -570,6 +571,7 @@ mod tests {
                 assertion_id, source_record_id: source, locator: None, evidence_kind: EvidenceKind::SourceSpan,
                 extractor_or_model: None, version: None, input_hash: None, output_hash: None, metric_name: None, metric_value: None,
                 dependency_origin: None,
+                external_classification: None,
             })
             .unwrap();
         };

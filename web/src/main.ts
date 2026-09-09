@@ -4,6 +4,7 @@ import { findLabelById } from "./fields";
 import { t, getLang, setLang, label, type Lang } from "./i18n";
 import { Layer35Panel } from "./layer35";
 import { LeanPlaygroundExplorer } from "./leanPlayground";
+import { MathGraphDiscoveryPanel } from "./mathGraphDiscovery";
 import { ProofGraphExplorer } from "./proofGraph";
 import { tokenizeIdentifier } from "./proofSearch";
 import { looksLikeTex, renderTex, texToSearchTerms, type TexTerms } from "./tex";
@@ -68,6 +69,10 @@ app.innerHTML = `
     <p class="section-sub" id="layer35-explain">${t("layer35Explain")}</p>
     <div id="layer35-root"></div>
   </section>
+
+  <section>
+    <div id="math-graph-discovery-root"></div>
+  </section>
 `;
 
 const parsePanel = document.querySelector<HTMLDivElement>("#parse-panel")!;
@@ -80,6 +85,7 @@ const dynamicTaxonomyRoot = document.querySelector<HTMLDivElement>("#dynamic-tax
 const proofGraphRoot = document.querySelector<HTMLDivElement>("#proof-graph-root")!;
 const leanPlaygroundRoot = document.querySelector<HTMLDivElement>("#lean-playground-root")!;
 const layer35Root = document.querySelector<HTMLDivElement>("#layer35-root")!;
+const mathGraphDiscoveryRoot = document.querySelector<HTMLDivElement>("#math-graph-discovery-root")!;
 
 let store: KernelStore | null = null;
 /**
@@ -100,6 +106,13 @@ let wasmFailed = false;
 let layer35: Layer35Panel | null = null;
 const dynamicTaxonomy = new DynamicTaxonomyExplorer(dynamicTaxonomyRoot);
 const proofGraph = new ProofGraphExplorer(proofGraphRoot);
+// P7.4（`docs/P7_4_STATUS.md`）: 既存のdependencies.json/検索/系譜ビューとは
+// 独立した、追加専用のパネル——`math-graph-discovery-project{2,3}.json`が
+// 無いビルド(=未生成)でも404を静かに扱い、ページ全体を壊さない。
+new MathGraphDiscoveryPanel(mathGraphDiscoveryRoot, [
+  `${import.meta.env.BASE_URL}math-graph-discovery-project2.json`,
+  `${import.meta.env.BASE_URL}math-graph-discovery-project3.json`,
+]);
 // `parseLeanSource` もwasm側の関数なので、wasmが読み込み終わるまでは
 // `null`のまま——コンストラクタはそれを織り込み済みで「読み込み中」を表示する。
 const leanPlayground = new LeanPlaygroundExplorer(leanPlaygroundRoot, null);

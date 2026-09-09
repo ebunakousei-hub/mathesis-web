@@ -11,6 +11,7 @@
 pub mod assertion;
 pub mod assertion_export;
 pub mod catalog_adapter;
+pub mod discovery_export;
 pub mod catalog_metadata;
 pub mod entity;
 pub mod error;

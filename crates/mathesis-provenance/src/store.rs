@@ -153,7 +153,24 @@ impl ProvenanceStore {
         Self::ensure_assertion_entity_columns(&conn)?;
         Self::ensure_p6_1_columns(&conn)?;
         Self::ensure_p6_3_columns(&conn)?;
+        Self::ensure_p7_4_columns(&conn)?;
         Ok(ProvenanceStore { conn })
+    }
+
+    /// P7.4（`docs/P7_4_STATUS.md`）: `ensure_p6_1_columns`と同じパターン。
+    /// 「このevidenceが外部データセット由来として、どう分類されるか」
+    /// (`external_literal_dependency`/`external_typeclass_hierarchy`)——
+    /// `dependency_origin`(生のedge_type: sig/proof/def/...)とは別軸。
+    /// Mathesis自身の証拠は常に`NULL`のまま。
+    fn ensure_p7_4_columns(conn: &Connection) -> Result<()> {
+        let evidence_columns: std::collections::HashSet<String> = conn
+            .prepare("PRAGMA table_info(evidence)")?
+            .query_map([], |row| row.get::<_, String>(1))?
+            .collect::<rusqlite::Result<_>>()?;
+        if !evidence_columns.contains("external_classification") {
+            conn.execute("ALTER TABLE evidence ADD COLUMN external_classification TEXT", [])?;
+        }
+        Ok(())
     }
 
     fn ensure_assertion_entity_columns(conn: &Connection) -> Result<()> {
@@ -225,6 +242,7 @@ impl ProvenanceStore {
         Self::ensure_assertion_entity_columns(&conn)?;
         Self::ensure_p6_1_columns(&conn)?;
         Self::ensure_p6_3_columns(&conn)?;
+        Self::ensure_p7_4_columns(&conn)?;
         Ok(ProvenanceStore { conn })
     }
 

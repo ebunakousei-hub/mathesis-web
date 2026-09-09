@@ -100,6 +100,7 @@ pub fn import(prov: &ProvenanceStore, release: ReleaseId) -> anyhow::Result<Impo
             metric_name: None,
             metric_value: None,
             dependency_origin: None,
+            external_classification: None,
         })?;
         stats.relations_imported += 1;
     }

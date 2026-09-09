@@ -56,6 +56,7 @@ fn seed_one_dependency_assertion(prov: &ProvenanceStore, release_id: mathesis_pr
         metric_name: None,
         metric_value: None,
         dependency_origin: None,
+        external_classification: None,
     })
     .unwrap();
     assertion.0
@@ -236,6 +237,7 @@ fn detects_ambiguous_duplicate_identity_key() {
             metric_name: None,
             metric_value: None,
             dependency_origin: None,
+            external_classification: None,
         })
         .unwrap();
         assertion.0
@@ -503,6 +505,7 @@ fn rejects_a_default_traversal_assertion_backed_only_by_text_extraction_evidence
         evidence_kind: EvidenceKind::SourceSpan, // FormalExportではない
         extractor_or_model: None, version: None, input_hash: None, output_hash: None, metric_name: None, metric_value: None,
         dependency_origin: None,
+        external_classification: None,
     })
     .unwrap();
 
@@ -559,6 +562,7 @@ fn rejects_a_default_traversal_assertion_whose_review_decision_has_no_reviewer_i
         evidence_kind: EvidenceKind::SourceSpan, extractor_or_model: None, version: None,
         input_hash: None, output_hash: None, metric_name: None, metric_value: None,
         dependency_origin: None,
+        external_classification: None,
     })
     .unwrap();
     prov.insert_review_decision(&NewReviewDecision {
@@ -634,6 +638,7 @@ fn accepts_default_traversal_assertions_with_qualifying_evidence() {
         evidence_kind: EvidenceKind::FormalExport, extractor_or_model: None, version: None,
         input_hash: None, output_hash: None, metric_name: None, metric_value: None,
         dependency_origin: Some("body".into()),
+        external_classification: None,
     })
     .unwrap();
 
@@ -652,6 +657,7 @@ fn accepts_default_traversal_assertions_with_qualifying_evidence() {
         evidence_kind: EvidenceKind::SourceSpan, extractor_or_model: None, version: None,
         input_hash: None, output_hash: None, metric_name: None, metric_value: None,
         dependency_origin: None,
+        external_classification: None,
     })
     .unwrap();
     prov.insert_review_decision(&NewReviewDecision {
@@ -718,6 +724,7 @@ fn rejects_a_default_traversal_assertion_whose_formal_evidence_has_no_reproducib
         evidence_kind: EvidenceKind::FormalExport, extractor_or_model: None, version: None,
         input_hash: None, output_hash: None, metric_name: None, metric_value: None,
         dependency_origin: Some("body".into()),
+        external_classification: None,
     })
     .unwrap();
 
@@ -779,6 +786,7 @@ fn rejects_a_default_traversal_assertion_whose_formal_evidence_used_a_different_
         evidence_kind: EvidenceKind::FormalExport, extractor_or_model: None, version: None,
         input_hash: None, output_hash: None, metric_name: None, metric_value: None,
         dependency_origin: Some("body".into()),
+        external_classification: None,
     })
     .unwrap();
 

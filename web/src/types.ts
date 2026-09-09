@@ -428,3 +428,39 @@ export interface LeanParseResult {
   judgments: LeanParsedJudgment[];
   dependencies: LeanParsedDependency[];
 }
+
+/**
+ * P7.4（`docs/P7_4_STATUS.md`）: 比較/発見モードUI専用の読み取りモデル
+ * （`mathesis-provenance export-discovery`が書き出す）。既存の
+ * `ExportedGraphDependency`（`dependencies.json`）とは完全に独立
+ * ——`judgment:mathgraph:`名前空間のassertionは数値idの契約に乗らない
+ * ため（P7.1）、そもそもそちらには出せない。
+ */
+export type DiscoverySource = "mathesis-checker" | "mathesis-text" | "math-graph-literal" | "math-graph-hierarchy";
+
+export interface DiscoveryEdge {
+  assertionId: number;
+  subject: string;
+  object: string;
+  source: DiscoverySource;
+  epistemicState: string;
+  traversalPolicy: string;
+  edgeType: string | null;
+  sourceKindLabel: string;
+  license: string | null;
+  locator: string | null;
+}
+
+export interface DiscoveryCounts {
+  mathesisChecker: number;
+  mathesisText: number;
+  mathGraphLiteral: number;
+  mathGraphHierarchy: number;
+}
+
+export interface DiscoveryExport {
+  projectLabel: string;
+  releaseTag: string;
+  edges: DiscoveryEdge[];
+  counts: DiscoveryCounts;
+}

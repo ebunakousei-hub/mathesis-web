@@ -393,6 +393,13 @@ pub struct NewEvidence {
     /// `None`のまま——専用enumは1種別にしか使わない3値のために
     /// 導入しない)。
     pub dependency_origin: Option<String>,
+    /// P7.4（`docs/P7_4_STATUS.md`）: 外部データセット由来のevidenceが
+    /// どう分類されるか——`"external_literal_dependency"`(実在する
+    /// Lean宣言どうしの依存)か`"external_typeclass_hierarchy"`
+    /// (P7.3でスキーマ+内容証拠により特定した、型クラス階層上の
+    /// 合成ノード)。`dependency_origin`(生の`edge_type`)とは別軸。
+    /// Mathesis自身の証拠は常に`None`のまま。
+    pub external_classification: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -409,6 +416,7 @@ pub struct Evidence {
     pub metric_name: Option<String>,
     pub metric_value: Option<f64>,
     pub dependency_origin: Option<String>,
+    pub external_classification: Option<String>,
 }
 
 /// P6.3（`docs/P6_3_STATUS.md`）: 本人確認済みレビューの記録。

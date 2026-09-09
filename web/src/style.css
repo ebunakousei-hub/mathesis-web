@@ -2547,3 +2547,150 @@ table.demo-table code {
   border-radius: 6px;
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
 }
+
+/* P7.4（docs/P7_4_STATUS.md）: Math-Graph比較/発見モードパネル。 */
+.mgd-wrap {
+  padding: 4px 0;
+}
+
+.mgd-heading {
+  margin-bottom: 4px;
+}
+
+.mgd-intro {
+  color: var(--text-dim);
+  font-size: 13px;
+  line-height: 1.6;
+  max-width: 780px;
+}
+
+.mgd-status {
+  color: var(--text-dim);
+  font-size: 13px;
+}
+
+.mgd-error {
+  color: #d3ab6f;
+}
+
+.mgd-toggle-bar {
+  margin: 10px 0 16px;
+}
+
+.mgd-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.mgd-project {
+  margin-bottom: 24px;
+  padding-top: 10px;
+  border-top: 1px solid var(--panel-border);
+}
+
+.mgd-project-title {
+  margin-bottom: 8px;
+}
+
+.mgd-counts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.mgd-count-chip {
+  display: inline-block;
+  padding: 2px 9px;
+  border-radius: 10px;
+  border: 1px solid var(--panel-border);
+  font-size: 12px;
+}
+
+.mgd-hidden-hint {
+  color: var(--text-dim);
+  font-size: 12px;
+  margin-bottom: 8px;
+}
+
+.mgd-edge-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.mgd-edge-item {
+  border: 1px solid var(--panel-border);
+  border-radius: 6px;
+  padding: 8px 10px;
+}
+
+.mgd-edge-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.mgd-edge-relation {
+  font-size: 13px;
+}
+
+.mgd-edge-meta {
+  margin-top: 4px;
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.mgd-edge-attribution {
+  margin-top: 4px;
+  font-size: 11px;
+  color: #d3ab6f;
+}
+
+.mgd-edge-locator {
+  margin-top: 4px;
+  font-size: 11px;
+  color: var(--text-dim);
+  font-family: monospace;
+  word-break: break-word;
+}
+
+.mgd-badge {
+  display: inline-block;
+  padding: 1px 8px;
+  border-radius: 10px;
+  border: 1px solid var(--panel-border);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.mgd-badge-checker,
+.mgd-count-chip.mgd-badge-checker {
+  border-color: #3a7a4a;
+  color: #8fd39e;
+}
+
+.mgd-badge-text,
+.mgd-count-chip.mgd-badge-text {
+  border-color: var(--panel-border);
+  color: var(--text-dim);
+}
+
+.mgd-badge-literal,
+.mgd-count-chip.mgd-badge-literal {
+  border-color: #3a5a7a;
+  color: #8fbdd3;
+}
+
+.mgd-badge-hierarchy,
+.mgd-count-chip.mgd-badge-hierarchy {
+  border-color: #7a5a2a;
+  color: #d3ab6f;
+}

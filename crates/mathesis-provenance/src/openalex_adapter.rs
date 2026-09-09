@@ -149,6 +149,7 @@ pub fn import(prov: &ProvenanceStore, release: ReleaseId, snapshot: &[SnapshotEn
                 metric_name: None,
                 metric_value: None,
                 dependency_origin: None,
+                external_classification: None,
             })?;
             stats.citations_imported += 1;
         }

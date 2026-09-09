@@ -147,6 +147,7 @@ pub fn import_graph(
                 metric_name: None,
                 metric_value: None,
                 dependency_origin: None,
+                external_classification: None,
             })?;
             stats.dependencies_imported += 1;
         }
@@ -194,6 +195,7 @@ pub fn import_graph(
                 metric_name: None,
                 metric_value: None,
                 dependency_origin: None,
+                external_classification: None,
             })?;
             stats.citations_imported += 1;
         }
@@ -257,6 +259,7 @@ pub fn import_graph(
             metric_name: None,
             metric_value: None,
             dependency_origin: None,
+            external_classification: None,
         })?;
         stats.morphisms_imported += 1;
 
@@ -349,6 +352,7 @@ pub fn import_taxonomy_relations(
                 metric_name: None,
                 metric_value: None,
                 dependency_origin: None,
+                external_classification: None,
             })?;
         }
 
@@ -370,6 +374,7 @@ pub fn import_taxonomy_relations(
                 metric_name: Some("invCL".into()),
                 metric_value: Some(edge.confidence as f64),
                 dependency_origin: None,
+                external_classification: None,
             })?;
         }
 

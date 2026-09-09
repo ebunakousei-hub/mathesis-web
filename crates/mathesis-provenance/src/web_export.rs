@@ -427,6 +427,7 @@ mod tests {
             metric_name: None,
             metric_value: None,
             dependency_origin: None,
+            external_classification: None,
         })
         .unwrap();
 
@@ -474,6 +475,7 @@ mod tests {
             metric_name: None,
             metric_value: None,
             dependency_origin: Some("body".into()),
+            external_classification: None,
         })
         .unwrap();
 
@@ -571,6 +573,7 @@ mod tests {
             metric_name: None,
             metric_value: None,
             dependency_origin: None,
+            external_classification: None,
         })
         .unwrap();
         if accepted {
@@ -662,6 +665,7 @@ mod tests {
                 metric_name: None,
                 metric_value: None,
                 dependency_origin: None,
+                external_classification: None,
             })
             .unwrap();
         }
@@ -678,6 +682,7 @@ mod tests {
                 metric_name: Some("invCL".into()),
                 metric_value: Some(v),
                 dependency_origin: None,
+                external_classification: None,
             })
             .unwrap();
         }
@@ -745,6 +750,7 @@ mod tests {
             metric_name: None,
             metric_value: None,
             dependency_origin: None,
+            external_classification: None,
         })
         .unwrap();
         // 射(未承認・承認済み・却下の3種)と関係(confirmed/grounded)を混ぜる。

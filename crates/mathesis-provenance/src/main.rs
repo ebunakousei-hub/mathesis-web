@@ -7,6 +7,7 @@ use mathesis_provenance::assertion_export::export_assertion_details;
 use mathesis_provenance::catalog_adapter::{build_concept_catalog, build_judgment_paper_catalog, catalog_metadata};
 use mathesis_provenance::lean_manifest_adapter;
 use mathesis_provenance::legacy_adapter::{import_graph, import_taxonomy_relations, ADAPTER_NAME, ADAPTER_VERSION};
+use mathesis_provenance::discovery_export::build_discovery_export;
 use mathesis_provenance::math_graph_adapter::{self, PilotEdge, PilotStatement};
 use mathesis_provenance::msc_adapter;
 use mathesis_provenance::openalex_adapter;
@@ -130,7 +131,14 @@ fn usage() -> ! {
          \x20     epistemic_state: extracted（observedではない、独立検証していないため）、\n\
          \x20     evidence_kind: formal_export、subject_ref/object_refは\n\
          \x20     judgment:mathgraph:<uuid>という別名前空間——既定では\n\
-         \x20     dependencies.jsonにも既定トラバース対象にもならない。"
+         \x20     dependencies.jsonにも既定トラバース対象にもならない。\n\
+         \x20 export-discovery --db <path> --release <tag> --project-label <label> --out <path>\n\
+         \x20     P7.4（docs/P7_4_STATUS.md）: 既存のdependencies.json/web-exportとは\n\
+         \x20     完全に独立した、比較/発見モードUI専用の読み取りモデルを書き出す。\n\
+         \x20     4種の出典(mathesis-checker/mathesis-text/math-graph-literal/\n\
+         \x20     math-graph-hierarchy)を明示的に分類し、subject/objectは\n\
+         \x20     entity_label_with_originの表示名で出す。本番のdependencies.json/\n\
+         \x20     検索インデックス/既定の信頼グラフには一切書き込まない——追加専用の別ファイル。"
     );
     std::process::exit(1);
 }
@@ -160,6 +168,7 @@ fn main() -> Result<()> {
         Some("review") => run_review(&args[2..]),
         Some("promote-review") => run_promote_review(&args[2..]),
         Some("import-math-graph") => run_import_math_graph(&args[2..]),
+        Some("export-discovery") => run_export_discovery(&args[2..]),
         _ => usage(),
     }
 }
@@ -369,6 +378,33 @@ fn run_import_math_graph(args: &[String]) -> Result<()> {
     Ok(())
 }
 
+/// P7.4（`docs/P7_4_STATUS.md`）: 比較/発見モードUI専用の読み取りモデルを
+/// 書き出す。`dependencies.json`/`web-export`の生成コードには一切触れない
+/// ——別の関数(`discovery_export::build_discovery_export`)を通す独立した
+/// 経路。
+fn run_export_discovery(args: &[String]) -> Result<()> {
+    let db = PathBuf::from(require_flag(args, "--db")?);
+    let release_tag = require_flag(args, "--release")?.to_string();
+    let project_label = require_flag(args, "--project-label")?.to_string();
+    let out = PathBuf::from(require_flag(args, "--out")?);
+
+    let prov = ProvenanceStore::open(&db).with_context(|| format!("{db:?} を開けません"))?;
+    let release = prov
+        .get_release_by_tag(&release_tag)?
+        .with_context(|| format!("release '{release_tag}' not found"))?;
+    let export = build_discovery_export(&prov, release.id, &release_tag, &project_label)?;
+    std::fs::write(&out, serde_json::to_string(&export)?).with_context(|| format!("{out:?} へ書き込めません"))?;
+    println!(
+        "discovery export ({project_label}): {} edges — mathesis-checker {}, mathesis-text {}, math-graph-literal {}, math-graph-hierarchy {} -> {out:?}",
+        export.edges.len(),
+        export.counts.mathesis_checker,
+        export.counts.mathesis_text,
+        export.counts.math_graph_literal,
+        export.counts.math_graph_hierarchy,
+    );
+    Ok(())
+}
+
 /// P6.3（`docs/P6_3_STATUS.md`）: 本人確認済みレビューを記録する唯一の書き込み口。
 /// `--authorization-level`を必須にするのは意図的——「誰が」だけでなく
 /// 「どんな資格で」を毎回明示させることで、リリースゲート
@@ -531,6 +567,7 @@ fn run_promote_review(args: &[String]) -> Result<()> {
             metric_name: None,
             metric_value: None,
             dependency_origin: None,
+            external_classification: None,
         })?;
         let review_id = prov.insert_review_decision(&NewReviewDecision {
             assertion_id: new_assertion_id,

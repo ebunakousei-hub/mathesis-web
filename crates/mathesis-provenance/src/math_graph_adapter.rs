@@ -81,6 +81,22 @@ pub const MATH_GRAPH_ATTRIBUTION: &str =
     "Math-Graph (uw-math-ai), https://huggingface.co/datasets/uw-math-ai/math-graph — dataset for \"TheoremGraph: Bridging Formal and Informal Mathematics\" (arXiv:2606.25363)";
 pub const MATH_GRAPH_SOURCE_URL: &str = "https://huggingface.co/datasets/uw-math-ai/math-graph";
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ExternalClassification {
+    ExternalLiteralDependency,
+    ExternalTypeclassHierarchy,
+}
+
+impl ExternalClassification {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::ExternalLiteralDependency => "external_literal_dependency",
+            Self::ExternalTypeclassHierarchy => "external_typeclass_hierarchy",
+        }
+    }
+}
+
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PilotStatement {
@@ -94,6 +110,11 @@ pub struct PilotStatement {
     pub lean_toolchain: Option<String>,
     pub mathlib_rev: Option<String>,
     pub git_commit: Option<String>,
+    /// P7.4（`docs/P7_4_STATUS.md`）: P7.3のスキーマ+内容証拠による分類——
+    /// `scope_pilot_p7_4.py`が事前に計算して埋める(このRustコードでは
+    /// 推測しない)。この安全部分集合には、この2値のどちらかに分類できた
+    /// 61件だけを含む——未解決だった2件はPythonの前処理段階で除外済み。
+    pub classification: ExternalClassification,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -116,6 +137,12 @@ pub struct ImportStats {
     /// `openalex_adapter::ImportStats::references_outside_catalog`と同じ
     /// 「雪だるま式収集の境界」——0でも異常ではない。
     pub dependencies_outside_pilot_scope: usize,
+    /// P7.4（`docs/P7_4_STATUS.md`）: `edge_type: proof`を持つ辺は、その
+    /// 「意味」(literal宣言どうしの証明項参照なのか、階層合成ノードの
+    /// 一部として何を表すのか)を別途定義するまで取り込まない、という
+    /// ユーザー指示による意図的な除外——`dependencies_outside_pilot_scope`
+    /// (スコープ外)とは別の理由による除外なので、別カウンタで数える。
+    pub dependencies_excluded_proof_edge: usize,
 }
 
 fn mathgraph_ref(statement_id: &str) -> String {
@@ -216,6 +243,10 @@ pub fn import_pilot(
             stats.dependencies_outside_pilot_scope += 1;
             continue;
         };
+        if edge.edge_type == "proof" {
+            stats.dependencies_excluded_proof_edge += 1;
+            continue;
+        }
 
         let ref_ = legacy_ref(edge);
         if prov.get_assertion_by_legacy_ref(release, &ref_)?.is_some() {
@@ -269,11 +300,14 @@ pub fn import_pilot(
             output_hash: None,
             metric_name: None,
             metric_value: None,
-            // 生の`edge_type`をそのまま保持する(sig/proof/def/extends/field/docref)
-            // ——Mathesis自身のtype/body/both語彙に無理に押し込めると、
-            // Math-Graph自身が実際に区別した情報を握り潰すことになる
-            // (P6.2の教訓「実測しないまま丸めない」)。
+            // 生の`edge_type`をそのまま保持する(sig/def/extends/field/docref
+            // ——`proof`は上で既に除外済み)——Mathesis自身のtype/body/both
+            // 語彙に無理に押し込めると、Math-Graph自身が実際に区別した
+            // 情報を握り潰すことになる(P6.2の教訓「実測しないまま丸めない」)。
             dependency_origin: Some(edge.edge_type.clone()),
+            // P7.4: この辺の起点(`src`)がP7.3でどう分類されたか
+            // (external_literal_dependency / external_typeclass_hierarchy)。
+            external_classification: Some(src.classification.as_str().to_string()),
         })?;
         stats.dependencies_imported += 1;
     }
@@ -294,7 +328,7 @@ mod tests {
         (prov, release)
     }
 
-    fn stmt(id: &str, decl_name: &str, module: &str) -> PilotStatement {
+    fn stmt(id: &str, decl_name: &str, module: &str, classification: ExternalClassification) -> PilotStatement {
         PilotStatement {
             statement_id: id.into(),
             decl_name: decl_name.into(),
@@ -306,19 +340,24 @@ mod tests {
             lean_toolchain: Some("v4.2.9".into()),
             mathlib_rev: None,
             git_commit: None,
+            classification,
         }
     }
 
     #[test]
     fn imports_declarations_and_a_dependency_edge_as_extracted_not_observed() {
         let (prov, release) = store_with_release();
-        let statements = vec![stmt("s1", "Foo.bar", "Mathlib.Foo"), stmt("s2", "Foo.baz", "Mathlib.Foo")];
-        let edges = vec![PilotEdge { src_id: "s1".into(), dep_id: "s2".into(), edge_type: "proof".into(), role: None, via_proj: false }];
+        let statements = vec![
+            stmt("s1", "Foo.bar", "Mathlib.Foo", ExternalClassification::ExternalLiteralDependency),
+            stmt("s2", "Foo.baz", "Mathlib.Foo", ExternalClassification::ExternalLiteralDependency),
+        ];
+        let edges = vec![PilotEdge { src_id: "s1".into(), dep_id: "s2".into(), edge_type: "sig".into(), role: None, via_proj: false }];
 
         let stats = prov.transaction(|| import_pilot(&prov, release, &statements, &edges, "rev-1")).unwrap();
         assert_eq!(stats.declarations_imported, 2);
         assert_eq!(stats.dependencies_imported, 1);
         assert_eq!(stats.dependencies_outside_pilot_scope, 0);
+        assert_eq!(stats.dependencies_excluded_proof_edge, 0);
 
         let assertions = prov.list_assertions_for_release(release).unwrap();
         assert_eq!(assertions.len(), 1);
@@ -334,13 +373,44 @@ mod tests {
         let evidence = prov.evidence_for(a.id).unwrap();
         assert_eq!(evidence.len(), 1);
         assert_eq!(evidence[0].evidence_kind, EvidenceKind::FormalExport);
-        assert_eq!(evidence[0].dependency_origin.as_deref(), Some("proof"));
+        assert_eq!(evidence[0].dependency_origin.as_deref(), Some("sig"));
+        assert_eq!(evidence[0].external_classification.as_deref(), Some("external_literal_dependency"));
+    }
+
+    #[test]
+    fn proof_type_edges_are_excluded_pending_a_separate_definition_of_their_meaning() {
+        let (prov, release) = store_with_release();
+        let statements = vec![
+            stmt("s1", "Foo.bar", "Mathlib.Foo", ExternalClassification::ExternalLiteralDependency),
+            stmt("s2", "Foo.baz", "Mathlib.Foo", ExternalClassification::ExternalLiteralDependency),
+        ];
+        let edges = vec![PilotEdge { src_id: "s1".into(), dep_id: "s2".into(), edge_type: "proof".into(), role: None, via_proj: false }];
+
+        let stats = prov.transaction(|| import_pilot(&prov, release, &statements, &edges, "rev-1")).unwrap();
+        assert_eq!(stats.dependencies_imported, 0);
+        assert_eq!(stats.dependencies_excluded_proof_edge, 1);
+        assert_eq!(prov.list_assertions_for_release(release).unwrap().len(), 0, "declarations import even though their proof edge is excluded");
+    }
+
+    #[test]
+    fn typeclass_hierarchy_classification_round_trips() {
+        let (prov, release) = store_with_release();
+        let statements = vec![
+            stmt("s1", "OrderDual.instMonoid", "Mathlib.Algebra.Order.Group.Synonym", ExternalClassification::ExternalTypeclassHierarchy),
+            stmt("s2", "OrderDual.instSemigroup", "Mathlib.Algebra.Order.Group.Synonym", ExternalClassification::ExternalTypeclassHierarchy),
+        ];
+        let edges = vec![PilotEdge { src_id: "s1".into(), dep_id: "s2".into(), edge_type: "def".into(), role: None, via_proj: false }];
+
+        prov.transaction(|| import_pilot(&prov, release, &statements, &edges, "rev-1")).unwrap();
+        let a = &prov.list_assertions_for_release(release).unwrap()[0];
+        let evidence = &prov.evidence_for(a.id).unwrap()[0];
+        assert_eq!(evidence.external_classification.as_deref(), Some("external_typeclass_hierarchy"));
     }
 
     #[test]
     fn edges_pointing_outside_the_pilot_scope_are_counted_not_fabricated() {
         let (prov, release) = store_with_release();
-        let statements = vec![stmt("s1", "Foo.bar", "Mathlib.Foo")];
+        let statements = vec![stmt("s1", "Foo.bar", "Mathlib.Foo", ExternalClassification::ExternalLiteralDependency)];
         let edges = vec![PilotEdge { src_id: "s1".into(), dep_id: "outside-the-scope".into(), edge_type: "sig".into(), role: None, via_proj: false }];
 
         let stats = prov.transaction(|| import_pilot(&prov, release, &statements, &edges, "rev-1")).unwrap();
@@ -355,7 +425,7 @@ mod tests {
         // src==depを渡された場合に単に2つの別assertion扱いしないことだけ確認
         // (self-loop除去そのものはPython前処理の責務、Rust側は信頼して素通し)。
         let (prov, release) = store_with_release();
-        let statements = vec![stmt("s1", "Foo.bar", "Mathlib.Foo")];
+        let statements = vec![stmt("s1", "Foo.bar", "Mathlib.Foo", ExternalClassification::ExternalLiteralDependency)];
         let edges = vec![PilotEdge { src_id: "s1".into(), dep_id: "s1".into(), edge_type: "def".into(), role: None, via_proj: false }];
         let stats = prov.transaction(|| import_pilot(&prov, release, &statements, &edges, "rev-1")).unwrap();
         assert_eq!(stats.dependencies_imported, 1, "adapter itself does not filter self-loops — scope_pilot.py already did");
@@ -364,8 +434,11 @@ mod tests {
     #[test]
     fn rerunning_the_same_pilot_is_idempotent() {
         let (prov, release) = store_with_release();
-        let statements = vec![stmt("s1", "Foo.bar", "Mathlib.Foo"), stmt("s2", "Foo.baz", "Mathlib.Foo")];
-        let edges = vec![PilotEdge { src_id: "s1".into(), dep_id: "s2".into(), edge_type: "proof".into(), role: None, via_proj: false }];
+        let statements = vec![
+            stmt("s1", "Foo.bar", "Mathlib.Foo", ExternalClassification::ExternalLiteralDependency),
+            stmt("s2", "Foo.baz", "Mathlib.Foo", ExternalClassification::ExternalLiteralDependency),
+        ];
+        let edges = vec![PilotEdge { src_id: "s1".into(), dep_id: "s2".into(), edge_type: "sig".into(), role: None, via_proj: false }];
 
         prov.transaction(|| import_pilot(&prov, release, &statements, &edges, "rev-1")).unwrap();
         let second = prov.transaction(|| import_pilot(&prov, release, &statements, &edges, "rev-1")).unwrap();

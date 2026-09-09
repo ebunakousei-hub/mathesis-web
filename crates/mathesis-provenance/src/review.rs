@@ -153,6 +153,7 @@ mod tests {
             metric_name: None,
             metric_value: None,
             dependency_origin: None,
+            external_classification: None,
         })
         .unwrap();
         assertion

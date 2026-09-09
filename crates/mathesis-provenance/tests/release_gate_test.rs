@@ -86,6 +86,7 @@ fn seed_store() -> (ProvenanceStore, String, i64) {
         metric_name: None,
         metric_value: None,
         dependency_origin: None,
+        external_classification: None,
     })
     .unwrap();
 
@@ -115,6 +116,7 @@ fn seed_store() -> (ProvenanceStore, String, i64) {
         metric_name: None,
         metric_value: None,
         dependency_origin: None,
+        external_classification: None,
     })
     .unwrap();
 
@@ -144,6 +146,7 @@ fn seed_store() -> (ProvenanceStore, String, i64) {
         metric_name: None,
         metric_value: None,
         dependency_origin: None,
+        external_classification: None,
     })
     .unwrap();
 
@@ -269,6 +272,7 @@ fn detects_stale_export_after_the_store_changes() {
         metric_name: None,
         metric_value: None,
         dependency_origin: None,
+        external_classification: None,
     })
     .unwrap();
 
@@ -323,4 +327,56 @@ fn detects_malformed_json() {
 
     let failures = verify_web_export(&prov, &tag, &manifest, &dir).unwrap();
     assert!(failures.iter().any(|f| f.check == "output_hash_mismatch" || f.check == "malformed_json"), "{failures:?}");
+}
+
+/// P7.4（`docs/P7_4_STATUS.md`「repeated stale relations.json issue」）:
+/// P6.3で実際に production で起きたバグの再現テスト——`RelationEdge`へ
+/// `traversalPolicy`フィールドを追加した後、`web/public/relations.json`が
+/// 一度も再生成されず、`verify-release`も再実行されずに放置された。
+/// この回帰は「行数が変わった」(`detects_stale_export_after_the_store_
+/// changes`が既にカバー)ではなく「同じ行数・同じ内容だが、各行の
+/// フィールド形状だけが古い」——ハッシュはその(古い形状の)ファイル自身に
+/// 対しては正しく計算し直されている(=`output_hash_mismatch`は起きない)
+/// という、より見つけにくいケース。`check_output_file`の構造比較
+/// (`on_disk != live_json`)がハッシュ一致とは独立にこれを捕まえることを
+/// 固定する。
+#[test]
+fn detects_a_field_added_to_the_row_schema_even_when_the_stale_files_own_hash_is_self_consistent() {
+    let (prov, tag, release_id) = seed_store();
+    let dir = temp_dir("schema-drift");
+    let manifest = write_web_export(&prov, &tag, release_id, &dir);
+
+    // 実際に生成された relations.json を読み、"traversalPolicy" フィールドを
+    // 落とした「旧スキーマの」版に書き換える——行数・その他のフィールドは
+    // 変えない。ハッシュはこの(古い形状の)バイト列に対して正しく再計算する
+    // ——「再生成はしたが、古いコードのビルドで再生成した」を模する。
+    let rel_path = dir.join("relations.json");
+    let live: Vec<serde_json::Value> = serde_json::from_slice(&std::fs::read(&rel_path).unwrap()).unwrap();
+    assert!(!live.is_empty(), "seed_store must produce at least one relation for this test to mean anything");
+    let stale: Vec<serde_json::Value> = live
+        .into_iter()
+        .map(|mut row| {
+            row.as_object_mut().unwrap().remove("traversalPolicy");
+            row
+        })
+        .collect();
+    let stale_bytes = serde_json::to_vec(&stale).unwrap();
+    std::fs::write(&rel_path, &stale_bytes).unwrap();
+    let mut manifest = manifest;
+    let stale_hash = mathesis_provenance::manifest::sha256_file(&rel_path).unwrap();
+    for f in &mut manifest.output_files {
+        if f.path.ends_with("relations.json") {
+            f.sha256 = stale_hash.clone();
+        }
+    }
+
+    let failures = verify_web_export(&prov, &tag, &manifest, &dir).unwrap();
+    assert!(
+        failures.iter().any(|f| f.check == "web_export_stale" && f.detail.contains("relations.json")),
+        "a row-schema change (missing field) with a self-consistent hash must still be caught: {failures:?}"
+    );
+    assert!(
+        !failures.iter().any(|f| f.check == "output_hash_mismatch"),
+        "this scenario specifically has a correctly-recomputed hash — hash mismatch must not be why it's caught: {failures:?}"
+    );
 }

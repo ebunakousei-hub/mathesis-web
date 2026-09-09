@@ -217,6 +217,7 @@ fn assertion_evidence_and_review_round_trip() {
             metric_name: None,
             metric_value: None,
             dependency_origin: None,
+            external_classification: None,
         })
         .unwrap();
     assert_eq!(store.evidence_for(assertion).unwrap().len(), 1);

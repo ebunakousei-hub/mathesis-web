@@ -312,6 +312,10 @@ export class DynamicTaxonomyExplorer {
       wrap.appendChild(this.renderSearchResults(query));
     } else {
       wrap.appendChild(this.renderTabs());
+      const scopeHint = document.createElement("p");
+      scopeHint.className = "dt-scope-hint";
+      scopeHint.textContent = t("mscScopeHint");
+      wrap.appendChild(scopeHint);
       if (this.view.tab === "fields") {
         wrap.appendChild(this.view.field ? this.renderFieldDetail(this.view.field) : this.renderFieldGrid(this.data.fields));
       } else {

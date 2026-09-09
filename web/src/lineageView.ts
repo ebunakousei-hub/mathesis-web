@@ -207,6 +207,22 @@ export class LineageView {
     item("is-specialization", t("legendSpecialization"));
     item("is-equivalence", t("legendEquivalence"));
     if (!this.opts.trustedOnly) item("is-visible-only", t("legendVisibleOnly"));
+
+    // 改善点.txt項目7: 「関係の種類」だけでなく「由来（source）」と
+    // 「承認状態」も同じ持続的な凡例に載せる——これまでは辺を個別に
+    // クリックしないと分からなかった。バッジは実際にチップへ使っている
+    // クラスをそのまま再利用し、凡例と実物の見た目がズレないようにする。
+    const badgeItem = (html: string, text: string): void => {
+      const el = document.createElement("span");
+      el.className = "lin-legend-item";
+      el.innerHTML = `${html}${escapeHtml(text)}`;
+      legend.appendChild(el);
+    };
+    badgeItem(`<span class="lin-chip-origin is-checker-derived">${escapeHtml(t("dependencyOriginCheckerBadge"))}</span>`, t("legendCheckerDerived"));
+    badgeItem(`<span class="lin-legend-swatch lin-legend-swatch-text-extracted"></span>`, t("legendTextExtracted"));
+    badgeItem(`<span class="lin-chip-status lin-chip-status-accepted">${escapeHtml(t("morphismStatusAcceptedBadge"))}</span>`, t("legendMorphismAccepted"));
+    badgeItem(`<span class="lin-chip-status lin-chip-status-proposed">${escapeHtml(t("morphismStatusProposedBadge"))}</span>`, t("legendMorphismProposed"));
+    badgeItem(`<span class="lin-chip-status lin-chip-status-rejected">${escapeHtml(t("morphismStatusRejectedBadge"))}</span>`, t("legendMorphismRejected"));
     return legend;
   }
 

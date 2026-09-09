@@ -45,9 +45,16 @@ successfully").
 the identical error GitHub reported; reordered the workflow so
 `npm run build` runs before `cargo test --all`; rebuilt `web/dist`;
 confirmed `cargo test --all` now passes (all workspace tests green).
-**Not yet re-verified on GitHub itself** — that requires pushing this
-fix, which hasn't happened as of this document (see "What's not done"
-below with the rest of the push-related items).
+**Re-verified on GitHub itself, not just locally**: pushed the fix
+(`8065d30`), watched the triggered run (`gh run watch 34309780679`) to
+completion — `build-and-verify` passed clean in 4m10s (checkout, Rust
+toolchain, rust-cache, wasm-pack, the WASM build, `npm ci`, `npm run
+build`, `cargo test --all`, `npm run eval`, the dist sanity check —
+every step green). `deploy` correctly did not run (an ordinary push to
+`main`, not `workflow_dispatch`/a `web-release-*` tag). Item 1's own
+bar — "the SHA-pinned workflow has actually run successfully" — is now
+genuinely met, confirmed by watching the real run, not assumed from the
+local fix.
 
 ## Item 4 — generated-artifact freshness, made structural
 
@@ -88,11 +95,65 @@ substantive changed; the script itself is the durable deliverable.
 as the only sanctioned way to regenerate `web/public/`'s exported
 files from now on.
 
+## Item 6 — a visible "no result ≠ no item" path, scoped honestly
+
+Read `dynamicTaxonomy.ts` before building anything (per this project's
+own recurring lesson about verifying "not implemented" claims against
+real code): a two-tab structure already existed — "Browse by MSC field"
+and a tab for clusters where zero members match any MSC2020 code
+(`tabNovel`). That's substantively already "MSC2020 categories" +
+"Unclassified," at cluster granularity — not the gap 改善点.txt's item 6
+is actually pointing at. The real, verified gap was the **explanatory
+message itself**: nothing told a user that an empty or thin MSC-field
+result means "not yet classified in this release," not "nothing here."
+
+Relabeled `tabNovel` from "Terminology not yet in MSC2020" to
+"Unclassified (not yet in MSC2020)" — same meaning, clearer as a
+navigation-path name. Added a persistent `mscScopeHint` line, always
+visible under the tab bar regardless of which tab is open, stating
+almost verbatim 改善点.txt's own required message, plus pointing at the
+existing concept search box as the practical "search regardless of
+classification" path (a real, already-built "All items" equivalent —
+building a second, redundant flat browse-all-94K-concepts view would
+contradict this project's own "research interface, not a search
+service" self-identity rather than serve the user). "Classification
+unavailable/restricted" and "Outside MSC scope" as distinct, separately
+tracked statuses are item 9's job (the classification-status data
+model, a "Do next" item) — not invented here without the backing data.
+
+## Item 7 — a persistent graph legend covering source and review status
+
+`lineageView.ts` already had a persistent, always-visible legend
+(`renderLegend()`) — but it only covered relationship type (spine /
+dependency / specialization / equivalence) and traversal policy
+(visible-only). The two dimensions 改善点.txt calls out as actually
+causing confusion — **source** (checker-derived vs. text-extracted) and
+**review status** (proposed / accepted / rejected) — were only ever
+shown by opening an individual edge's chip, exactly the "do not require
+users to open every edge" failure mode the item describes.
+
+Extended the same legend with 5 more entries, deliberately reusing the
+*exact* CSS classes the real per-edge chips already use
+(`.lin-chip-origin.is-checker-derived`, `.lin-chip-status-{accepted,
+proposed,rejected}`) rather than inventing new colors/shapes that could
+drift from what the graph actually shows. Added a dashed empty-swatch
+item for "no badge = text-extracted," since the absence of a badge is
+itself meaningful here and was previously unexplained. Math-Graph's own
+4-way source distinction was deliberately **not** folded into this same
+legend — those edges structurally cannot appear in this lineage view
+(P7.1's numeric-judgment-id finding) and already have their own
+complete, correct legend inside the separate Math-Graph discovery
+panel; merging the two would suggest a combination that can't occur.
+
+Verified live in the browser (not just compiled): opened a real
+judgment's lineage view, dumped `.lin-legend`'s rendered HTML via
+`javascript_tool` — all 10 items present with the correct badge classes
+and colors in both languages, no console errors. `npm run build` +
+`npm run eval` clean afterward (MRR@10 0.9667 unchanged, 0 contradictory
+cycles).
+
 ## What's not done yet in this pass
 
-- **Item 1's own closing bar** ("has actually run successfully") isn't
-  met yet — the fix above needs to be pushed and a real Actions run
-  needs to succeed before this is true, not just locally reproduced.
 - **Item 2 (first real deployment)** — checked via `gh api repos/
   ebunakousei-hub/mathesis-web/pages`: `build_type` is still `"legacy"`
   (branch-based Pages, the one rendering the README) — the Pages source
@@ -100,16 +161,13 @@ files from now on.
   per the prior round's explicit hand-off; unchanged this pass.
 - **Item 3 (verify the deployed URL end to end)** — blocked on item 2;
   nothing to browser-test yet.
-- **Item 5 (launch messaging matches reality)** — mostly already true
-  from Phase A's `#data-scope` page (corpus-not-exhaustive, no-
-  minimality claim, `reviewed`-count-is-zero, Math-Graph-not-verified
-  are all already stated there, checked against the actual page text
-  this pass). The two genuinely missing claims — "MSC2020 covers only
-  classified records" and "absence from an MSC category ≠ absence from
-  the corpus" — are honestly not addable as a true statement until item
-  6 (an actual Unclassified/All-items path) exists; asserting it in
-  prose without the UI to back it up would be exactly the kind of
-  claim-not-matching-reality this item warns against.
-- **Items 6 and 7** (All items/Unclassified navigation; persistent
-  graph/source/trust legend) — real, non-trivial UI features, not yet
-  started this pass.
+- **Item 5 (launch messaging matches reality)** — the two claims tied
+  directly to item 6's data model ("MSC2020 covers only classified
+  records," "absence ≠ absence from corpus") are now communicated in
+  the UI itself (`mscScopeHint`, above) rather than only in prose; the
+  rest was already true from Phase A's `#data-scope` page.
+- **Item 9's fuller classification-status model** (classified /
+  unclassified / unavailable / outside-scope / pending / rejected, as
+  distinct tracked statuses with their own evidence/revision/confidence)
+  is still not built — item 6's UI-level fix above is real but narrower
+  than that data model, deliberately, per its own "Do next" priority.

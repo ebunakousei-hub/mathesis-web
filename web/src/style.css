@@ -263,6 +263,14 @@ table.demo-table code {
   background: #20242e;
 }
 
+.dt-scope-hint {
+  color: var(--text-dim);
+  font-size: 12px;
+  line-height: 1.6;
+  margin: -8px 0 18px;
+  max-width: 780px;
+}
+
 .dt-back {
   background: var(--panel);
   border: 1px solid var(--panel-border);
@@ -1779,6 +1787,17 @@ table.demo-table code {
 .lin-legend-line.is-visible-only {
   border-top-color: var(--lin-dep);
   opacity: 0.5;
+}
+
+/* 改善点.txt項目7: 「バッジが無いこと自体が意味を持つ」(=text-extracted)
+   状態を凡例で示すための、あえて空の枠線スウォッチ。 */
+.lin-legend-swatch {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  border: 1px dashed var(--panel-border);
+  border-radius: 4px;
+  vertical-align: middle;
 }
 
 .lin-trusted-empty {

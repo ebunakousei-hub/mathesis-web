@@ -360,6 +360,160 @@ const DICT = {
     en: "Found {judgments} judgments and {deps} dependency edges within this paste.",
   },
   leanPlaygroundPastedSourceLabel: { ja: "貼り付けたソース", en: "pasted source" },
+
+  // ── データ範囲とライセンス（`main.ts` の #data-scope 節） ─────
+  dataScopeLinkText: {
+    ja: "↓ このサイトは何を、どこまで載せているか（データ範囲とライセンス）",
+    en: "↓ What this site does (and doesn't) cover — data scope & licensing",
+  },
+  dataScopeTitle: { ja: "データ範囲とライセンス", en: "Data scope & licensing" },
+  researchPreviewBadge: { ja: "研究プレビュー", en: "Research preview" },
+  dataScopeExplain: {
+    ja: "研究プレビューです。「証明を検証した」「網羅的な数学検索」といった主張はしていません——ここに書かれていない保証は存在しないものとして読んでください。",
+    en: "This is a research preview. It does not claim to verify proofs or to search mathematics exhaustively — treat any guarantee not written here as not existing.",
+  },
+  dataScopeBody: {
+    ja: `
+      <h3>ステータスとスナップショット</h3>
+      <p>データのコーパスは <code>v0-baseline-20260905</code> リリース（2026-09-05取得）から件数が変わっていません——直近の <code>mathesis-provenance verify-release</code>（証拠層・Web出力の構造的な再検証ゲート）で確認済みです。コードとスキーマは継続的に更新されており、このページ自体もその一部です。</p>
+
+      <h3>含まれるデータソース</h3>
+      <table class="scope-table">
+        <thead><tr><th>ソース</th><th>含まれる内容</th><th>ライセンス</th><th>備考</th></tr></thead>
+        <tbody>
+          <tr>
+            <td>Lean 4 / Mathlib 由来の証明グラフ</td>
+            <td>判断ノード 4,052件・依存辺 6,185件・射 2,284件（実際のLeanコーパスからのインポート）</td>
+            <td><a href="https://www.apache.org/licenses/LICENSE-2.0" target="_blank" rel="noopener">Apache-2.0</a>（Mathlibのソースコード）</td>
+            <td>Leanカーネルによる型検査・証明検証ではありません。構文がどこまで解析できたか（パース状態）だけを表示します。</td>
+          </tr>
+          <tr>
+            <td>arXiv概念タクソノミー</td>
+            <td>論文14万2,948件のtitle/abstract/categoriesから抽出した候補フレーズ11万3,339件・解決済み概念9万4,278件・クラスタ3万4,083件（うち曖昧1,334件）</td>
+            <td>arXivメタデータの利用条件に準拠</td>
+            <td>本文（LaTeXソース）からの引用は、関係の根拠として一文のみ・出典arXiv ID明記の上で表示。論文ごとの本文ライセンスは投稿者の選択に依存するため一括のCCではなく、全文は再配布していません。</td>
+          </tr>
+          <tr>
+            <td>MSC2020分類</td>
+            <td>タクソノミーのクラスタをMSC2020分野コードへalignment</td>
+            <td><a href="https://creativecommons.org/licenses/by-nc-sa/4.0/" target="_blank" rel="noopener">CC BY-NC-SA 4.0</a>（<a href="https://msc2020.org/" target="_blank" rel="noopener">Mathematical Reviews / zbMATH</a>）</td>
+            <td>非営利限定のライセンスです。MSC名は公式データが英語のみのため、分野名・クラスタ名は常に英語表記です。</td>
+          </tr>
+          <tr>
+            <td>Math-Graph（外部・パイロット）</td>
+            <td>2つのLeanプロジェクトから62宣言・48辺（型クラス階層46件・字面一致2件）</td>
+            <td><a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener">CC BY 4.0</a>（<a href="https://huggingface.co/datasets/uw-math-ai/math-graph" target="_blank" rel="noopener">uw-math-ai</a>）</td>
+            <td>既定の信頼グラフ・検索・系譜表示には一切含まれません（visible_only）。Mathesis自身による独立検証はしていません。「Math-Graph比較/発見モード」パネルは既定で非表示です。</td>
+          </tr>
+          <tr>
+            <td>OpenAlex</td>
+            <td>論文間の引用照合のために取得</td>
+            <td><a href="https://creativecommons.org/publicdomain/zero/1.0/" target="_blank" rel="noopener">CC0 1.0</a></td>
+            <td>現時点でこのコーパスに解決済みの引用辺は0件（Lean紐付き論文138件のうち）——パイプラインには組み込まれていますが、公開データにはまだ実質的に反映されていません。</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h3>信頼レベルの用語</h3>
+      <ul class="scope-list">
+        <li><b>Lean検査由来（checker-derived）</b> — 型検査済みの証明項からLean elaboratorが直接取り出した依存関係。</li>
+        <li><b>本文抽出（text-extracted）</b> — 証明・定義本体の識別子名の一致から機械的に検出したもの。elaboratorによる検証は経ていません。</li>
+        <li><b>本人確認済みレビュー（reviewed）</b> — 資格を持つ人間が実際にレビューし承認した決定。<b>このリリースでは0件</b>——スキーマとUI（承認バッジ）は実装済みですが、まだどの主張もこの経路を通っていません。</li>
+        <li><b>外部・表示専用（external / visible_only）</b> — Math-Graphなど、Mathesisが独立検証していない外部データセット由来。既定のトラバースにも検索結果にも現れません。</li>
+        <li><b>統計的示唆（proposed）</b> — Hearstパターンや分布的類似度などのヒューリスティックが機械的に提案しただけの関係。「一致」表示の実測精度は約50%（38件の手動確認、当初36%から改善）——事実の確認ではありません。</li>
+      </ul>
+
+      <h3>これは何ではないか</h3>
+      <ul class="scope-list">
+        <li>網羅的な数学文献検索サービスではありません——arXivの数学カテゴリの一部と、限られたLeanコーパスだけを扱っています。</li>
+        <li>Leanカーネルによる証明検証ではありません——パース状態と識別子一致による依存関係の推定を表示しているだけです。</li>
+        <li>依存関係が数学的に最小であることは主張していません。</li>
+        <li>表示されている辺がすべて証明上の依存や論理的含意であるとは限りません（特殊化・一般化・同値・関連候補は別種の主張です）。</li>
+        <li>Math-Graphなど外部データはMathesis自身による独立検証を経ていません。</li>
+      </ul>
+
+      <h3>実験的な機能</h3>
+      <ul class="scope-list">
+        <li>Leanプレイグラウンド（貼り付け即時抽出。ブラウザ内で完結し、型検査は行いません）</li>
+        <li>MSC動的タクソノミー（統計的クラスタリング。人手によるキュレーションではありません）</li>
+        <li>Math-Graph比較/発見パネル（外部データ、既定で非表示）</li>
+        <li>型付き関係の提案（統計的示唆。実測精度・要検証の注記あり）</li>
+      </ul>
+
+      <h3>運用について</h3>
+      <p>現在は静的な読み取り専用スナップショットとして配信しています。ユーザーアカウント・サーバー側の検索API・このアプリケーション自体によるトラッキングはありません。</p>
+    `,
+    en: `
+      <h3>Status and snapshot</h3>
+      <p>The data corpus has not changed in row counts since the <code>v0-baseline-20260905</code> release (captured 2026-09-05) — confirmed by the most recent <code>mathesis-provenance verify-release</code> run (the structural re-verification gate for the evidence layer and Web exports). Code and schema keep changing; this page is part of that ongoing work.</p>
+
+      <h3>Data sources included</h3>
+      <table class="scope-table">
+        <thead><tr><th>Source</th><th>What's included</th><th>License</th><th>Notes</th></tr></thead>
+        <tbody>
+          <tr>
+            <td>Lean 4 / Mathlib-derived proof graph</td>
+            <td>4,052 judgment nodes, 6,185 dependency edges, 2,284 morphisms (a real import of a Lean corpus)</td>
+            <td><a href="https://www.apache.org/licenses/LICENSE-2.0" target="_blank" rel="noopener">Apache-2.0</a> (Mathlib source code)</td>
+            <td>Not Lean-kernel type-checking or proof verification — this only shows how much of the syntax could be parsed.</td>
+          </tr>
+          <tr>
+            <td>arXiv concept taxonomy</td>
+            <td>142,948 papers' title/abstract/categories → 113,339 candidate phrases → 94,278 resolved concepts → 34,083 clusters (1,334 ambiguous)</td>
+            <td>Used under arXiv's own terms for metadata reuse</td>
+            <td>Excerpts from paper LaTeX source are shown only as a single sentence of evidence for one relation, attributed by arXiv id. Per-paper full-text license varies by submitter and is not blanket CC — full paper text is never republished.</td>
+          </tr>
+          <tr>
+            <td>MSC2020 classification</td>
+            <td>Taxonomy clusters aligned to MSC2020 subject codes</td>
+            <td><a href="https://creativecommons.org/licenses/by-nc-sa/4.0/" target="_blank" rel="noopener">CC BY-NC-SA 4.0</a> (<a href="https://msc2020.org/" target="_blank" rel="noopener">Mathematical Reviews / zbMATH</a>)</td>
+            <td>Non-commercial only. Field and cluster names stay in English since the official MSC2020 vocabulary has no Japanese translation.</td>
+          </tr>
+          <tr>
+            <td>Math-Graph (external, pilot)</td>
+            <td>62 declarations / 48 edges (46 typeclass-hierarchy, 2 literal) from 2 Lean projects</td>
+            <td><a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener">CC BY 4.0</a> (<a href="https://huggingface.co/datasets/uw-math-ai/math-graph" target="_blank" rel="noopener">uw-math-ai</a>)</td>
+            <td>Never part of the default trusted graph, search, or lineage view (visible_only). Not independently verified by Mathesis. The "Math-Graph comparison / discovery mode" panel is hidden by default.</td>
+          </tr>
+          <tr>
+            <td>OpenAlex</td>
+            <td>Fetched for cross-paper citation matching</td>
+            <td><a href="https://creativecommons.org/publicdomain/zero/1.0/" target="_blank" rel="noopener">CC0 1.0</a></td>
+            <td>0 citation edges are currently resolved in this corpus (out of 138 Lean-linked papers) — the pipeline exists, but this release's data doesn't materially reflect it yet.</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h3>Trust-level vocabulary</h3>
+      <ul class="scope-list">
+        <li><b>checker-derived</b> — pulled directly from a type-checked proof term by the Lean elaborator.</li>
+        <li><b>text-extracted</b> — detected mechanically by matching identifier names in a proof/definition body; not elaborator-verified.</li>
+        <li><b>reviewed (authenticated)</b> — an accountable decision by a qualified human reviewer. <b>Zero in this release</b> — the schema and UI (the review badge) exist, but no assertion has gone through this path yet.</li>
+        <li><b>external / visible_only</b> — from an external dataset (Math-Graph) that Mathesis has not independently verified. Never appears in default traversal or search results.</li>
+        <li><b>proposed (statistical suggestion)</b> — a heuristic's mechanical guess (Hearst patterns, distributional similarity). Measured precision on "agreement"-labeled relations is ~50% (38 hand-checked samples, up from an initial 36%) — not a confirmed fact.</li>
+      </ul>
+
+      <h3>What this is not</h3>
+      <ul class="scope-list">
+        <li>Not an exhaustive mathematics search service — it covers a slice of arXiv's math categories and a limited Lean corpus.</li>
+        <li>Not Lean kernel proof verification — it only shows parse status and dependencies inferred from identifier matches.</li>
+        <li>Does not claim any dependency set is mathematically minimal.</li>
+        <li>Not every displayed edge is a proof dependency or logical implication (specialization/generalization/equivalence/relatedness are different kinds of claims).</li>
+        <li>External data such as Math-Graph has not been independently verified by Mathesis.</li>
+      </ul>
+
+      <h3>Experimental features</h3>
+      <ul class="scope-list">
+        <li>Lean playground (extraction happens instantly in the browser on paste; no type-checking)</li>
+        <li>Dynamic MSC taxonomy (statistical clustering, not human-curated)</li>
+        <li>Math-Graph comparison / discovery panel (external data, hidden by default)</li>
+        <li>Typed relation suggestions (statistical, with a measured-precision caveat shown inline)</li>
+      </ul>
+
+      <h3>Operationally</h3>
+      <p>Mathesis is served today as a static, read-only snapshot — no user accounts, no server-side search API, and no telemetry collected by this application.</p>
+    `,
+  },
 } as const;
 
 /** 辞書の鍵。他のモジュールが `t()` に渡す鍵を型として持てるように公開する。 */

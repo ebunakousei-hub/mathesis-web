@@ -30,6 +30,7 @@ app.innerHTML = `
     </div>
   </header>
   <p class="tagline" id="tagline">${t("tagline")}</p>
+  <a class="scope-link" id="scope-link" href="#data-scope">${t("dataScopeLinkText")}</a>
 
   <input class="search-box" id="search-box" type="text" placeholder="${t("searchPlaceholder")}" autocomplete="off" />
   <p class="search-hint" id="search-hint">${t("texHint")}</p>
@@ -72,6 +73,13 @@ app.innerHTML = `
 
   <section>
     <div id="math-graph-discovery-root"></div>
+  </section>
+
+  <section id="data-scope">
+    <h2 id="data-scope-title">${t("dataScopeTitle")}</h2>
+    <p class="section-sub" id="data-scope-explain">${t("dataScopeExplain")}</p>
+    <div class="scope-badge" id="data-scope-badge">${t("researchPreviewBadge")}</div>
+    <div id="data-scope-body">${t("dataScopeBody")}</div>
   </section>
 `;
 
@@ -280,6 +288,11 @@ function applyLangUi(): void {
   document.querySelector("#demo-explain")!.textContent = t("demoExplain");
   document.querySelector("#layer35-title")!.textContent = t("layer35Title");
   document.querySelector("#layer35-explain")!.textContent = t("layer35Explain");
+  document.querySelector("#scope-link")!.textContent = t("dataScopeLinkText");
+  document.querySelector("#data-scope-title")!.textContent = t("dataScopeTitle");
+  document.querySelector("#data-scope-explain")!.textContent = t("dataScopeExplain");
+  document.querySelector("#data-scope-badge")!.textContent = t("researchPreviewBadge");
+  document.querySelector("#data-scope-body")!.innerHTML = t("dataScopeBody");
 
   if (searchBox.value.trim().length === 0) {
     renderParseEmpty();

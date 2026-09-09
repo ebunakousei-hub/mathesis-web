@@ -58,6 +58,7 @@ async function run(): Promise<void> {
       ambiguousClusterCount: data.ambiguousClusterCount,
       fields: data.fields,
       novelClusters: data.novelClusters,
+      pendingClusters: data.pendingClusters,
     };
 
     const message: SearchWorkerReadyMessage = { type: "ready", shell, searchIndex };

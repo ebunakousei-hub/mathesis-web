@@ -77,10 +77,11 @@ const DICT = {
     en: "Failed to load taxonomy.json. Run `mathesis-taxonomy export` first.",
   },
   tabByField: { ja: "MSC分野から探す", en: "Browse by MSC field" },
+  tabPending: { ja: "保留（未確定の候補）", en: "Pending (unconfirmed candidates)" },
   tabNovel: { ja: "未分類（MSC未収載）", en: "Unclassified (not yet in MSC2020)" },
   mscScopeHint: {
-    ja: "MSC分野を絞り込んでも0件・少数件になることがあります——それは「この分野に該当する事項が無い」ではなく「このリリースで分類済みの事項が無い」という意味です。分類状況に関わらず全事項を探すには、上の検索欄を使ってください。",
-    en: "An MSC field can show zero or few results — that means no currently classified item in this release, not that nothing relevant exists. To search regardless of classification status, use the search box above.",
+    ja: "MSC分野を絞り込んでも0件・少数件になることがあります——それは「この分野に該当する事項が無い」ではなく「このリリースで分類済みの事項が無い」という意味です。分類状況（分類済み・保留・未分類）は必ずしも数学的な関連の有無を意味しません。分類状況に関わらず全事項を探すには、上の検索欄を使ってください。",
+    en: "An MSC field can show zero or few results — that means no currently classified item in this release, not that nothing relevant exists. Classification status (classified / pending / unclassified) does not by itself indicate mathematical relevance. To search regardless of classification status, use the search box above.",
   },
   clustersLabel: { ja: "クラスタ", en: "clusters" },
   conceptsLabel: { ja: "概念", en: "concepts" },
@@ -89,6 +90,10 @@ const DICT = {
   novelClusterHint: {
     ja: "このクラスタのメンバーは1件もMSC2020のコードと一致しませんでした——実際に使われているが未収載の可能性がある語彙です。",
     en: "No member of this cluster matched an existing MSC2020 code — likely terminology in active use that MSC hasn't caught up with yet.",
+  },
+  pendingClusterHint: {
+    ja: "候補となるMSCコードはありますが、メンバーの過半数の一致（2件以上かつ50%超）には届いていません——「分類済み」と表示するには根拠が弱いため、候補のまま保留にしています。",
+    en: "There's a candidate MSC code, but it falls short of a clear majority among members (needs 2+ agreeing, over 50%) — too weak to call it classified, so it stays a pending candidate.",
   },
   searchConceptsPlaceholder: {
     ja: "概念名で検索（例: finite field）",

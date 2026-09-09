@@ -10,6 +10,7 @@ use mathesis_provenance::legacy_adapter::{import_graph, import_taxonomy_relation
 use mathesis_provenance::discovery_export::build_discovery_export;
 use mathesis_provenance::math_graph_adapter::{self, PilotEdge, PilotStatement};
 use mathesis_provenance::msc_adapter;
+use mathesis_provenance::msc_classification;
 use mathesis_provenance::openalex_adapter;
 use mathesis_provenance::openalex_fetch::{self, SnapshotEntry};
 use mathesis_provenance::manifest::{
@@ -132,6 +133,13 @@ fn usage() -> ! {
          \x20     evidence_kind: formal_export、subject_ref/object_refは\n\
          \x20     judgment:mathgraph:<uuid>という別名前空間——既定では\n\
          \x20     dependencies.jsonにも既定トラバース対象にもならない。\n\
+         \x20 classify-msc --db <path> --taxonomy-db <path> --release <tag>\n\
+         \x20     改善点.txt項目9（docs/PA_3_STATUS.md）: mathesis-taxonomy自身の\n\
+         \x20     cluster_alignmentsを読み、classified/pending/unclassifiedの3状態へ\n\
+         \x20     分類してmsc_classificationsへ書く（unavailable/outside_scope/rejectedは\n\
+         \x20     型として予約済みだがこのコマンドでは1件も生成しない——理由は\n\
+         \x20     msc_classification.rsのdocコメント参照）。(cluster_id, release)で\n\
+         \x20     冪等——同じリリースへの再実行は上書きのみ。\n\
          \x20 export-discovery --db <path> --release <tag> --project-label <label> --out <path>\n\
          \x20     P7.4（docs/P7_4_STATUS.md）: 既存のdependencies.json/web-exportとは\n\
          \x20     完全に独立した、比較/発見モードUI専用の読み取りモデルを書き出す。\n\
@@ -162,6 +170,7 @@ fn main() -> Result<()> {
         Some("verify-release") => run_verify_release(&args[2..]),
         Some("build-catalog") => run_build_catalog(&args[2..]),
         Some("import-msc") => run_import_msc(&args[2..]),
+        Some("classify-msc") => run_classify_msc(&args[2..]),
         Some("fetch-openalex") => run_fetch_openalex(&args[2..]),
         Some("import-openalex") => run_import_openalex(&args[2..]),
         Some("import-lean-manifest") => run_import_lean_manifest(&args[2..]),
@@ -229,6 +238,27 @@ fn run_import_msc(args: &[String]) -> Result<()> {
         "MSC2020: concepts +{} (skip {}), hierarchy assertions +{} (skip {})",
         stats.concepts_imported, stats.concepts_skipped,
         stats.relations_imported, stats.relations_skipped
+    );
+    Ok(())
+}
+
+/// 改善点.txt項目9（`docs/PA_3_STATUS.md`）: `mathesis-taxonomy`の
+/// `cluster_alignments`を読み、6状態モデルへ分類して`msc_classifications`
+/// へ書く。`import-msc`（MSC2020オントロジー自体のimport）とは別コマンド
+/// ——後者はコード階層、こちらはクラスタの分類結果で、対象も出力先の列も
+/// 重ならない。
+fn run_classify_msc(args: &[String]) -> Result<()> {
+    let db = PathBuf::from(require_flag(args, "--db")?);
+    let taxonomy_db = PathBuf::from(require_flag(args, "--taxonomy-db")?);
+    let release_tag = require_flag(args, "--release")?.to_string();
+    let prov = ProvenanceStore::open(&db).with_context(|| format!("{db:?} を開けません"))?;
+    let release = prov
+        .get_release_by_tag(&release_tag)?
+        .with_context(|| format!("release '{release_tag}' not found — run import-legacy first"))?;
+    let stats = prov.transaction(|| msc_classification::classify_from_taxonomy(&prov, &taxonomy_db, release.id))?;
+    println!(
+        "MSC classification status: {} classified, {} pending, {} unclassified ({} clusters total)",
+        stats.classified, stats.pending, stats.unclassified, stats.total_clusters
     );
     Ok(())
 }

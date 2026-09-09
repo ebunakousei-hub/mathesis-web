@@ -143,6 +143,36 @@ CREATE TABLE IF NOT EXISTS catalog_metadata (
     entity_count                INTEGER NOT NULL,
     alias_count                 INTEGER NOT NULL
 );
+
+-- 改善点.txt項目9（`docs/PA_3_STATUS.md`、`msc_classification.rs`）:
+-- MSC分類の明示的なステータスモデル。意図的に`relation_assertions`とは
+-- 別のテーブル——`unclassified`/`unavailable`/`outside_scope`は「分類の
+-- 不在」を表すステータスで、subject/predicate/objectの3つ組では表現
+-- できない（詳細は`msc_classification.rs`冒頭のdocコメント）。
+-- `(cluster_id, release_id)`で一意——同じリリースへの再実行は行を
+-- 増やさず上書きする（このプロジェクトの他のアダプタと同じ冪等性）。
+CREATE TABLE IF NOT EXISTS msc_classifications (
+    id                    INTEGER PRIMARY KEY,
+    cluster_id            INTEGER NOT NULL,
+    representative_label  TEXT NOT NULL,
+    status                TEXT NOT NULL,
+    msc_code              TEXT,
+    msc_code_name         TEXT,
+    is_direct             INTEGER,
+    msc_revision          TEXT NOT NULL,
+    source                TEXT NOT NULL,
+    classifier_version    TEXT NOT NULL,
+    confidence            REAL,
+    grounded_count        INTEGER NOT NULL,
+    cluster_size          INTEGER NOT NULL,
+    evidence_locator      TEXT,
+    review_status         TEXT NOT NULL,
+    release_id            INTEGER NOT NULL REFERENCES releases(id),
+    created_at_unix       INTEGER NOT NULL,
+    UNIQUE(cluster_id, release_id)
+);
+CREATE INDEX IF NOT EXISTS idx_msc_classifications_status ON msc_classifications(status);
+CREATE INDEX IF NOT EXISTS idx_msc_classifications_release ON msc_classifications(release_id);
 "#;
 
 impl ProvenanceStore {

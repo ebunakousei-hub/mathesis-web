@@ -280,6 +280,58 @@ applied directly (not re-litigated as open questions):**
    `uses_concept`) rather than guessing rules for them. It exists to catch
    adapter bugs now, not to stand in for the real catalog later.
 
+## MSC classification status — a third, deliberately separate vocabulary
+
+Added PA.3 (改善点.txt item 9, `docs/PA_3_STATUS.md`). Until this pass, MSC
+subject-classification of taxonomy clusters was computed
+(`mathesis-taxonomy::alignment::align_cluster`) but had **no representation
+at all** in this document or in the evidence layer's `relation kind`/
+`epistemic state` vocabulary above — a real, silent gap (confirmed by
+grepping this file for "MSC" before this pass: zero matches).
+
+**Why this isn't `RelationKind`/`EpistemicState`.** A classification like
+"this cluster is unclassified" or "this record's classification is
+unavailable" describes the *absence* of a classification — there is no
+object to assert a `subject/predicate/object` triple against, and no
+"how was this obtained" state that fits (`extracted`/`observed`/etc. all
+presume something concrete was found). Forcing these into
+`RelationAssertion` would make "no row exists" and "explicitly judged
+unclassified" indistinguishable — exactly the kind of silent gap this
+document warns against elsewhere. `msc_classifications`
+(`crates/mathesis-provenance/src/msc_classification.rs`) is therefore a
+standalone, additive table, not a variant of `RelationAssertion`.
+
+**Classification status** (`ClassificationStatus`, distinct from the MSC
+code itself — a row can carry a candidate/actual `msc_code` *and* a status
+that isn't `classified`):
+
+| Status | Meaning | Produced by the current adapter? |
+| --- | --- | --- |
+| `classified` | `grounded_count >= 2` and a majority (`>0.5`) of grounded members agree | Yes — 887 clusters in the shipped `v0-baseline-20260905` corpus |
+| `pending` | Some grounded signal exists but doesn't reach majority confidence (the former unexposed "ambiguous" bucket) | Yes — 1,334 clusters (950 with `size > 1`, browsable in the web UI's "Pending" tab) |
+| `unclassified` | Zero grounded members | Yes — 31,862 clusters |
+| `unavailable` | The classification pipeline doesn't run on this entity kind at all (e.g. Lean judgments, Math-Graph nodes — MSC alignment in this codebase only ever runs on taxonomy concept-clusters) | **No — reserved, 0 rows.** Not populated this pass; would need a new adapter pass over non-cluster entity kinds. |
+| `outside_scope` | Explicitly judged outside MSC's subject-matter scope | **No — reserved, 0 rows.** No current pipeline signal distinguishes this from ordinary low confidence (`pending`); inventing one would be fabrication. |
+| `rejected` | A human reviewer explicitly rejected a classification | **No — reserved, 0 rows.** No MSC-classification-specific review workflow exists yet (mirrors `review_decisions`: 0 rows in production for the same honest reason). |
+
+Every row also retains: `msc_revision` (the bundled MSC2020 CSV's content
+hash, matching `msc_adapter::snapshot_hash()`), `source`
+(`mathesis-taxonomy::cluster_alignments`), `classifier_version`
+(`mathesis-taxonomy::alignment-v1`), `confidence` (the same vote-share
+value `ClusterAlignment` already computes — not a calibrated probability,
+same caveat as elsewhere in this document), `grounded_count`/`cluster_size`,
+an `evidence_locator`, `review_status` (currently always `"unreviewed"`),
+and the `release_id` it was computed against. `is_direct` is reserved for
+distinguishing a literal voted classification from one inferred by walking
+up the MSC ancestor chain — the current `align_cluster` algorithm only ever
+produces one directly-voted result per cluster, so every populated row has
+`is_direct = true` today; the column exists for when that changes, not
+because it's exercised now.
+
+**Coverage metrics** (`docs/PA_3_STATUS.md`'s scope note: item 9's own bar,
+not item 10's fuller per-source/per-record-type breakdown): `mathesis-
+provenance stats` now prints DB-wide classification totals by status.
+
 ## Known limitations (not fixed in this increment — deliberately deferred)
 
 A second external review (2026-09-05) raised several points that are valid

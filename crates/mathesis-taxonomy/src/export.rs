@@ -409,6 +409,12 @@ pub struct TaxonomyExport {
     pub ambiguous_cluster_count: usize,
     pub fields: Vec<ExportedField>,
     pub novel_clusters: Vec<ExportedCluster>,
+    /// 改善点.txt項目6/9: `ambiguous_cluster_count`はこれまで件数だけで、
+    /// どのクラスタが該当するか閲覧する手段が無かった。grounded memberは
+    /// いるが多数派に届かない（`is_confident()`不成立・`is_novel()`も不成立）
+    /// クラスタを、`novel_clusters`と同じ規則（`size > 1`、単発クラスタは
+    /// 除外）で実際に列挙する——「保留」として明示的に閲覧可能にする。
+    pub pending_clusters: Vec<ExportedCluster>,
     pub search_index: SearchIndexColumns,
 }
 
@@ -483,11 +489,22 @@ pub fn build_export(
             }
         })
         .collect();
-    fields.sort_by_key(|f| std::cmp::Reverse(f.concept_count));
+    // PA.3（改善点.txt項目9の作業中に発見）: `by_field`はHashMapなので
+    // 反復順序がプロセスごとに変わる——同じconcept_countを持つ2分野が
+    // あると、それだけで実行のたびに`fields`の並びが変わっていた
+    // （データは同一なのに出力バイト列が変わる、リリースの
+    // 再現性という前提そのものに反する）。`code`昇順を決定的な
+    // タイブレーカーとして加える。
+    fields.sort_by(|a, b| b.concept_count.cmp(&a.concept_count).then_with(|| a.code.cmp(&b.code)));
 
     let mut novel_clusters: Vec<ExportedCluster> =
         alignments.iter().filter(|a| a.is_novel() && a.size > 1).map(to_cluster).collect();
     novel_clusters.sort_by_key(|c| std::cmp::Reverse(c.size));
+
+    let mut pending_clusters: Vec<ExportedCluster> =
+        alignments.iter().filter(|a| !a.is_confident() && !a.is_novel() && a.size > 1).map(to_cluster).collect();
+    // 信頼度が高い順——「あと一歩で確信に届かなかった」ものから見せる。
+    pending_clusters.sort_by(|a, b| b.confidence.partial_cmp(&a.confidence).unwrap_or(std::cmp::Ordering::Equal));
 
     let ambiguous_cluster_count = alignments.iter().filter(|a| !a.is_confident() && !a.is_novel()).count();
 
@@ -529,6 +546,7 @@ pub fn build_export(
         ambiguous_cluster_count,
         fields,
         novel_clusters,
+        pending_clusters,
         search_index,
     }
 }
@@ -905,5 +923,69 @@ mod tests {
         let columns = columns_from(&[("only term", 1)]);
         let shard = build_head_shard(&columns);
         assert_eq!(shard.phrase.len(), 1, "HEAD_SHARD_SIZEより少ない件数を水増ししない");
+    }
+
+    /// PA.3（改善点.txt項目9の作業中に発見）: `by_field`がHashMapを経由する
+    /// ため、同じconcept_countを持つ2分野があると`fields`の並びが実行の
+    /// たびに変わっていた——実際の本番データ(taxonomy.json再生成)で
+    /// 検出した。`code`昇順のタイブレーカーで固定したことを、同点になる
+    /// 入力を明示的に作って確認する。
+    #[test]
+    fn fields_with_tied_concept_count_sort_deterministically_by_code() {
+        // 05-XX と 06-XX、どちらも1クラスタ・2概念（confidentになる最小構成:
+        // grounded_count>=2かつ両方一致）で concept_count が同点になるよう作る。
+        let candidates = vec![
+            candidate("combinatorics term a", 5, Some("05A05")),
+            candidate("combinatorics term b", 5, Some("05A05")),
+            candidate("lattice term a", 5, Some("06A05")),
+            candidate("lattice term b", 5, Some("06A05")),
+        ];
+        let a0 = crate::alignment::align_cluster(0, 2, &[Some("05A05".to_string()), Some("05A05".to_string())]);
+        let a1 = crate::alignment::align_cluster(1, 2, &[Some("06A05".to_string()), Some("06A05".to_string())]);
+        assert!(a0.is_confident() && a1.is_confident(), "テストの前提: 両方confidentであるべき");
+        let mut members_by_cluster = HashMap::new();
+        members_by_cluster.insert(0, vec!["combinatorics term a".to_string(), "combinatorics term b".to_string()]);
+        members_by_cluster.insert(1, vec!["lattice term a".to_string(), "lattice term b".to_string()]);
+
+        let resolved = resolve_all(&candidates);
+        let export = build_export(100, &candidates, &resolved, &[a0, a1], &members_by_cluster);
+
+        assert_eq!(export.fields.len(), 2);
+        assert_eq!(export.fields[0].concept_count, export.fields[1].concept_count, "同点であることが前提");
+        assert_eq!(
+            export.fields.iter().map(|f| f.code.as_str()).collect::<Vec<_>>(),
+            vec!["05-XX", "06-XX"],
+            "concept_countが同点のときはcode昇順で決定的に並ぶべき"
+        );
+    }
+
+    /// 改善点.txt項目6/9: grounded memberはいるが多数派に届かないクラスタ
+    /// （dominant_codeは付くがis_confident()は不成立）が、pending_clustersへ
+    /// 実際に列挙されることを確認する——これまでambiguous_cluster_countの
+    /// 数字だけで、閲覧する手段が無かった層。
+    #[test]
+    fn ambiguous_clusters_are_listed_in_pending_clusters_not_silently_dropped() {
+        // grounded_count=1（is_confident()の条件grounded_count>=2を満たさない）
+        // だが is_novel()（grounded_count==0）でもない——ambiguous。
+        let candidates = vec![
+            candidate("weak signal term", 5, Some("18A05")),
+            candidate("unrelated ungrounded term", 3, None),
+        ];
+        let alignment = crate::alignment::align_cluster(0, 2, &[Some("18A05".to_string()), None]);
+        assert!(!alignment.is_confident() && !alignment.is_novel(), "テストの前提: このクラスタはambiguousであるべき");
+        let mut members_by_cluster = HashMap::new();
+        members_by_cluster
+            .insert(0, vec!["weak signal term".to_string(), "unrelated ungrounded term".to_string()]);
+
+        let resolved = resolve_all(&candidates);
+        let export = build_export(100, &candidates, &resolved, std::slice::from_ref(&alignment), &members_by_cluster);
+
+        assert_eq!(export.ambiguous_cluster_count, 1);
+        assert_eq!(export.pending_clusters.len(), 1, "sizeが1より大きいambiguousクラスタはpending_clustersへ列挙されるべき");
+        // grounded_count=1のため、align_clusterはSection祖先("18Axx")を
+        // 候補コードとして返す(vote_at_levelの祖先マッチ、leafそのものではない)。
+        assert_eq!(export.pending_clusters[0].dominant_code.as_deref(), Some("18Axx"));
+        assert!(export.novel_clusters.is_empty());
+        assert!(export.fields.is_empty(), "confidentではないのでfieldsには入らない");
     }
 }

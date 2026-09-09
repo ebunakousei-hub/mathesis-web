@@ -27,7 +27,7 @@ import type {
 } from "./types";
 import { assertArrayShape, escapeHtml, formatGeneratedAt, reportProvenanceIssue } from "./util";
 
-type Tab = "fields" | "novel";
+type Tab = "fields" | "pending" | "novel";
 type View = { tab: Tab; field: ExportedField | null; openCluster: number | null; query: string };
 
 const SEARCH_TOP_K = 12;
@@ -318,8 +318,10 @@ export class DynamicTaxonomyExplorer {
       wrap.appendChild(scopeHint);
       if (this.view.tab === "fields") {
         wrap.appendChild(this.view.field ? this.renderFieldDetail(this.view.field) : this.renderFieldGrid(this.data.fields));
+      } else if (this.view.tab === "pending") {
+        wrap.appendChild(this.renderClusterGrid(this.data.pendingClusters, "pending"));
       } else {
-        wrap.appendChild(this.renderClusterGrid(this.data.novelClusters, true));
+        wrap.appendChild(this.renderClusterGrid(this.data.novelClusters, "novel"));
       }
     }
 
@@ -737,7 +739,7 @@ export class DynamicTaxonomyExplorer {
     el.textContent =
       `${d.paperCount.toLocaleString()} papers → ${d.candidateCount.toLocaleString()} candidates → ` +
       `${d.resolvedConceptCount.toLocaleString()} concepts (aliases folded) → ` +
-      `${d.clusterCount.toLocaleString()} clusters (${d.fields.length} MSC fields, ${d.novelClusters.length} novel, ${d.ambiguousClusterCount} ambiguous) · ` +
+      `${d.clusterCount.toLocaleString()} clusters (${d.fields.length} MSC fields, ${d.pendingClusters.length}/${d.ambiguousClusterCount} pending, ${d.novelClusters.length} novel) · ` +
       `${t("generatedAtLabel")}: ${formatGeneratedAt(d.generatedAtUnix)}`;
     return el;
   }
@@ -752,6 +754,13 @@ export class DynamicTaxonomyExplorer {
       this.view = { ...this.view, tab: "fields", field: null, openCluster: null };
       this.render();
     };
+    const pendingBtn = document.createElement("button");
+    pendingBtn.className = `dt-tab ${this.view.tab === "pending" ? "active" : ""}`;
+    pendingBtn.textContent = t("tabPending");
+    pendingBtn.onclick = () => {
+      this.view = { ...this.view, tab: "pending", field: null, openCluster: null };
+      this.render();
+    };
     const novelBtn = document.createElement("button");
     novelBtn.className = `dt-tab ${this.view.tab === "novel" ? "active" : ""}`;
     novelBtn.textContent = t("tabNovel");
@@ -759,7 +768,7 @@ export class DynamicTaxonomyExplorer {
       this.view = { ...this.view, tab: "novel", field: null, openCluster: null };
       this.render();
     };
-    el.append(fieldsBtn, novelBtn);
+    el.append(fieldsBtn, pendingBtn, novelBtn);
     return el;
   }
 
@@ -800,11 +809,11 @@ export class DynamicTaxonomyExplorer {
     heading.textContent = `${field.code}  ${field.name}`;
     wrap.appendChild(heading);
 
-    wrap.appendChild(this.renderClusterGrid(field.clusters, false));
+    wrap.appendChild(this.renderClusterGrid(field.clusters, "field"));
     return wrap;
   }
 
-  private renderClusterGrid(clusters: ExportedCluster[], novel: boolean): HTMLElement {
+  private renderClusterGrid(clusters: ExportedCluster[], mode: "field" | "pending" | "novel"): HTMLElement {
     const grid = document.createElement("div");
     grid.className = "dt-cluster-grid";
     for (const c of clusters) {
@@ -813,12 +822,17 @@ export class DynamicTaxonomyExplorer {
 
       const headBtn = document.createElement("button");
       headBtn.className = "dt-cluster-head";
-      const title = novel
+      // "pending"は"field"と同じくdominant_code/nameを持つ（投票はされて
+      // いる、多数派に届かなかっただけ）——タイトルは候補コードを見せる。
+      // "novel"はgrounded memberが0件なのでコード自体が無い。
+      const title = mode === "novel"
         ? (c.members[0]?.phrase ?? `#${c.id}`)
         : `${escapeHtml(c.dominantCode ?? "")} ${escapeHtml(c.dominantName ?? "")}`;
-      const confidenceHtml = novel ? "" : `<span class="dt-confidence">${Math.round(c.confidence * 100)}% ${t("confidenceLabel")}</span>`;
+      const confidenceHtml = mode === "novel"
+        ? ""
+        : `<span class="dt-confidence">${Math.round(c.confidence * 100)}% ${t("confidenceLabel")}</span>`;
       headBtn.innerHTML = `
-        <span class="dt-cluster-title">${novel ? escapeHtml(title) : title}</span>
+        <span class="dt-cluster-title">${mode === "novel" ? escapeHtml(title) : title}</span>
         <span class="dt-cluster-size">${c.size} ${t("membersLabel")}</span>
         ${confidenceHtml}
       `;
@@ -830,7 +844,7 @@ export class DynamicTaxonomyExplorer {
       card.appendChild(headBtn);
 
       if (isOpen) {
-        card.appendChild(this.renderMembers(c, novel));
+        card.appendChild(this.renderMembers(c, mode));
       }
 
       grid.appendChild(card);
@@ -838,13 +852,18 @@ export class DynamicTaxonomyExplorer {
     return grid;
   }
 
-  private renderMembers(cluster: ExportedCluster, novel: boolean): HTMLElement {
+  private renderMembers(cluster: ExportedCluster, mode: "field" | "pending" | "novel"): HTMLElement {
     const box = document.createElement("div");
     box.className = "dt-members";
-    if (novel) {
+    if (mode === "novel") {
       const hint = document.createElement("p");
       hint.className = "dt-novel-hint";
       hint.textContent = t("novelClusterHint");
+      box.appendChild(hint);
+    } else if (mode === "pending") {
+      const hint = document.createElement("p");
+      hint.className = "dt-novel-hint";
+      hint.textContent = t("pendingClusterHint");
       box.appendChild(hint);
     }
     const rows = cluster.members

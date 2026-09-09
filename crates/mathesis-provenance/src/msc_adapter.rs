@@ -22,7 +22,7 @@ pub struct ImportStats {
     pub relations_skipped: usize,
 }
 
-fn snapshot_hash() -> String {
+pub(crate) fn snapshot_hash() -> String {
     let mut hasher = Sha256::new();
     hasher.update(mathesis_msc::official_csv().as_bytes());
     let digest = hasher.finalize();

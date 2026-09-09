@@ -27,6 +27,10 @@ pub struct Stats {
     /// `reference_coverage`と違い「先に`build-catalog`を実行して」という
     /// 前提ゲートは要らない(cites述語がゼロ件なら単に0/total_papers)。
     pub citation_coverage: CitationCoverage,
+    /// 改善点.txt項目9（`docs/PA_3_STATUS.md`）。`classify-msc`を一度も
+    /// 実行していないDBでは空のまま——それ自体はエラーではない
+    /// （他の`import-*`系コマンドと同じ「未実行なら0件」の扱い）。
+    pub msc_classification_totals: Vec<(String, i64)>,
 }
 
 pub fn compute(prov: &ProvenanceStore) -> anyhow::Result<Stats> {
@@ -43,6 +47,7 @@ pub fn compute(prov: &ProvenanceStore) -> anyhow::Result<Stats> {
         entity_count_by_kind: prov.entity_count_by_kind()?,
         reference_coverage: catalog_adapter::assertion_reference_coverage(prov)?,
         citation_coverage: openalex_adapter::citation_coverage(prov)?,
+        msc_classification_totals: prov.msc_classification_totals()?,
     })
 }
 
@@ -75,5 +80,14 @@ impl Stats {
             println!("  (run `build-catalog` to populate the entity catalog and see reference coverage)");
         }
         self.citation_coverage.print();
+        if self.msc_classification_totals.is_empty() {
+            println!("msc_classifications: 0 (run `classify-msc` to populate)");
+        } else {
+            let total: i64 = self.msc_classification_totals.iter().map(|(_, n)| n).sum();
+            println!("msc_classifications: {total}");
+            for (status, n) in &self.msc_classification_totals {
+                println!("    {status}: {n}");
+            }
+        }
     }
 }

@@ -183,6 +183,10 @@ export interface TaxonomyExport {
   ambiguousClusterCount: number;
   fields: ExportedField[];
   novelClusters: ExportedCluster[];
+  /** 改善点.txt項目6/9: grounded memberはいるが多数派に届かないクラスタ
+   * （旧"ambiguous"）の実データ——`ambiguousClusterCount`は件数のみ
+   * だったが、これで実際に閲覧できる。 */
+  pendingClusters: ExportedCluster[];
   searchIndex: SearchIndexColumns;
 }
 

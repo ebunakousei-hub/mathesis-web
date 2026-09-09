@@ -7,6 +7,55 @@ counts at release time" and gives Phase 1+ a fixed baseline to diff against.
 This is a human-readable manifest, not the versioned append-only release
 system §5.4/§6.2 describes for later phases.
 
+## research-preview-2026-09-09
+
+The first public deployment — the live site actually serves the
+interactive app for the first time (previously the GitHub Pages URL
+served a Jekyll render of this repo's README; see
+`docs/PA_STATUS.md`/`docs/PA_1_STATUS.md`/`docs/PA_2_STATUS.md` for the
+full trail of what that took). Labeled a **read-only research preview**
+— see the live `#data-scope` page for exactly what that means and
+doesn't.
+
+- **Tag**: `research-preview-2026-09-09` (annotated, points at the
+  commit below).
+- **Source commit**: `d02c0347e1b791297b7c46707e8bb9359feddf6f`.
+- **Deployment**: GitHub Actions, `.github/workflows/deploy-pages.yml`,
+  triggered manually (`workflow_dispatch`) — run
+  [`34311497848`](https://github.com/ebunakousei-hub/mathesis-web/actions/runs/34311497848),
+  both `build-and-verify` and `deploy` succeeded. Pages source switched
+  from legacy branch-based publishing to `"workflow"` (GitHub Actions)
+  the same session, confirmed via `gh api repos/.../pages` →
+  `build_type: "workflow"`, `status: "built"`.
+- **Live URL**: https://ebunakousei-hub.github.io/mathesis-web/ —
+  verified end-to-end in-browser post-deploy (not assumed from a green
+  CI run): app shell, asset/WASM/worker loading, concept + judgment
+  search, MSC field browsing and the "Unclassified" tab, the persistent
+  empty-category explanation, the graph legend (source + review-status
+  badges), a real evidence/provenance panel (assertion detail), the
+  bilingual `#data-scope` page, a direct deep-link to `#data-scope` on
+  a fresh page load, mobile viewport (no page-level horizontal
+  overflow), the `404.html` app-shell fallback, and `.nojekyll` — all
+  confirmed working, zero console errors, zero failed network requests.
+- **Corpus / data snapshot**: `v0-baseline-20260905` — row counts
+  unchanged since that release (reconfirmed by Phase A/PA.1/PA.2's own
+  `verify-release` runs and `scripts/regenerate-web-export.sh`'s test
+  run, all this same week).
+- **Provenance release**: `release_id=1`, `release_tag=v0-baseline-20260905`.
+- **Catalog revision**: `mathesis-provenance::catalog-v1` /
+  `mathesis-taxonomy::resolve-v1`, 98,468 entities, 117,795 aliases
+  (`web/public/provenance-manifest.json`'s `catalog` block).
+- **Dataset revisions**: arXiv/Lean legacy import inputs —
+  `scratch/judgments.db` sha256 `a23a538d…`, `scratch/papers_100k_fc.db`
+  sha256 `f6e11dd3…` (both recorded in `provenance-manifest.json`);
+  Math-Graph pilot — HuggingFace commit `ced4ca9de1bd9e5b67aa09d1d515e270e438fa1e`
+  (`uw-math-ai/math-graph`, CC BY 4.0); MSC2020 — Mathematical
+  Reviews/zbMATH, CC BY-NC-SA 4.0.
+- **Generated artifact hashes** (`web/public/web-export-manifest.json`):
+  `dependencies.json` sha256 `b9917ee2…`, `morphisms.json` sha256
+  `102e874d…`, `relations.json` sha256 `3336f8a9…`.
+- **Build date**: 2026-09-09.
+
 ## v0-baseline-20260905
 
 The first commit into version control — this repository had no `.git`

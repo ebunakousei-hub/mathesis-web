@@ -83,6 +83,15 @@ const DICT = {
     ja: "MSC分野を絞り込んでも0件・少数件になることがあります——それは「この分野に該当する事項が無い」ではなく「このリリースで分類済みの事項が無い」という意味です。分類状況（分類済み・保留・未分類）は必ずしも数学的な関連の有無を意味しません。分類状況に関わらず全事項を探すには、上の検索欄を使ってください。",
     en: "An MSC field can show zero or few results — that means no currently classified item in this release, not that nothing relevant exists. Classification status (classified / pending / unclassified) does not by itself indicate mathematical relevance. To search regardless of classification status, use the search box above.",
   },
+  /** P8.2（docs/P8_2_STATUS.md）: 「Chio Panel」からMath-Graph発見モード
+   * パネル（#math-graph-discovery-root）への案内。ここのMSC分野・クラスタは
+   * arXiv論文から抽出した概念専用——Math-Graph/TheoremGraphのLean宣言は
+   * 別体系（分類状況は常にunavailable）のため、統合するのではなく
+   * 別パネルへの案内に留める（`docs/P8_2_STATUS.md`の設計判断）。 */
+  theoremGraphCrossLink: {
+    ja: "TheoremGraph/Math-GraphのLean宣言はここには含まれません（arXiv論文から抽出した概念専用のMSC分類のため）。パイロット取り込み済みの宣言・依存関係は下部の「Math-Graph比較/発見モード」パネルで閲覧できます。",
+    en: "TheoremGraph/Math-Graph Lean declarations are not included here (this MSC classification covers arXiv-paper-derived concepts only). Pilot-imported declarations and dependencies are browsable in the \"Math-Graph comparison / discovery mode\" panel further down the page.",
+  },
   clustersLabel: { ja: "クラスタ", en: "clusters" },
   conceptsLabel: { ja: "概念", en: "concepts" },
   confidenceLabel: { ja: "確信度", en: "confidence" },

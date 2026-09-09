@@ -28,6 +28,11 @@ function isExternal(source: DiscoverySource): boolean {
   return source === "math-graph-literal" || source === "math-graph-hierarchy";
 }
 
+/** 一度に描画する辺の件数——「paginated TheoremGraph results」要求
+ * （P8.2 Stage 3ディレクティブ）への対応。P8.1で1本のexportに最大数百件の
+ * 外部辺が載りうるようになったため、無制限描画は避ける。 */
+const EDGES_PAGE_SIZE = 50;
+
 export class MathGraphDiscoveryPanel {
   private root: HTMLElement;
   private projects: DiscoveryExport[] = [];
@@ -35,6 +40,9 @@ export class MathGraphDiscoveryPanel {
   private loaded = false;
   /** P7.4: 既定でfalse——「外部の辺は既定では隠す」というユーザー指示そのもの。 */
   private showExternal = false;
+  /** プロジェクトグループ単位(`projectLabel`+`repoSlug`)で「もっと見る」を
+   * 何回押したか。キーが無ければ1ページ目(`EDGES_PAGE_SIZE`件)だけ表示。 */
+  private visibleCount: Record<string, number> = {};
 
   constructor(root: HTMLElement, private sourcePaths: string[]) {
     this.root = root;
@@ -42,23 +50,36 @@ export class MathGraphDiscoveryPanel {
     this.load();
   }
 
+  /**
+   * P8.2: 各パスを独立にfetch・parseし、1本の失敗(404・その他の非ok・
+   * JSONとして壊れている——例えばVite開発サーバのSPA fallbackが未生成
+   * ファイルへの要求にも200+`index.html`を返すため、ローカル開発では
+   * "200だがJSONではない"応答が実際に起きる)を他のプロジェクトへ
+   * 巻き添えさせない。以前は`Promise.all`全体を1つのtry/catchで囲んで
+   * いたため、1本のfetch/parseが失敗するだけで他の全プロジェクトの表示
+   * まで消えていた(このファイル自身の冒頭コメントが謳う「404を静かに
+   * 扱い、ページ全体を壊さない」を実際には満たしていなかった)。1つも
+   * 読めなければ、その時だけエラー表示。
+   */
   private async load(): Promise<void> {
-    try {
-      const responses = await Promise.all(this.sourcePaths.map((p) => fetch(p)));
-      for (const [i, resp] of responses.entries()) {
-        if (!resp.ok) {
-          if (resp.status !== 404) reportProvenanceIssue(`${this.sourcePaths[i]} returned HTTP ${resp.status}`);
-          this.loadError = true;
-          this.render();
-          return;
+    const results = await Promise.all(
+      this.sourcePaths.map(async (path): Promise<DiscoveryExport | null> => {
+        try {
+          const resp = await fetch(path);
+          if (!resp.ok) {
+            if (resp.status !== 404) reportProvenanceIssue(`${path} returned HTTP ${resp.status}`);
+            return null;
+          }
+          return (await resp.json()) as DiscoveryExport;
+        } catch (err) {
+          reportProvenanceIssue(`${path} failed to load or parse: ${err}`);
+          return null;
         }
-      }
-      this.projects = (await Promise.all(responses.map((r) => r.json()))) as DiscoveryExport[];
-      this.loaded = true;
-    } catch (err) {
-      reportProvenanceIssue(`Math-Graph discovery panel failed to load: ${err}`);
-      this.loadError = true;
-    }
+      }),
+    );
+    this.projects = results.filter((r): r is DiscoveryExport => r !== null);
+    this.loaded = true;
+    this.loadError = this.projects.length === 0;
     this.render();
   }
 
@@ -148,6 +169,32 @@ export class MathGraphDiscoveryPanel {
     `;
     section.appendChild(counts);
 
+    // P8.2: "coverage metrics" — a source-Lean-project breakdown of the
+    // same external edges, when this export spans more than one repo
+    // (P8.1's combined pilot DB does). Guarded with `?.` — an export
+    // generated before P8.2 (schema_version predates these fields) won't
+    // have this key at all; treat that the same as "no breakdown".
+    if (project.byProject?.length > 0) {
+      const byProjectBox = document.createElement("div");
+      byProjectBox.className = "mgd-by-project";
+      byProjectBox.innerHTML = project.byProject
+        .map(
+          (p) =>
+            `<span class="mgd-count-chip mgd-badge-project">${escapeHtml(p.repoSlug)}: ${p.literalCount} literal, ${p.hierarchyCount} hierarchy</span>`,
+        )
+        .join(" ");
+      section.appendChild(byProjectBox);
+    }
+
+    // P8.2: an honest statement of MSC coverage for this export's external
+    // declarations — see `discovery_export.rs::msc_classification_note`.
+    if (project.mscClassificationNote?.length > 0) {
+      const note = document.createElement("p");
+      note.className = "mgd-msc-note";
+      note.textContent = project.mscClassificationNote;
+      section.appendChild(note);
+    }
+
     const visibleEdges = project.edges.filter((e) => this.showExternal || !isExternal(e.source));
     const externalHidden = project.edges.length - visibleEdges.length;
     if (!this.showExternal && externalHidden > 0) {
@@ -157,26 +204,67 @@ export class MathGraphDiscoveryPanel {
       section.appendChild(hint);
     }
 
-    const list = document.createElement("ul");
-    list.className = "mgd-edge-list";
-    // Mathesis's own edges are summarized, not enumerated one-by-one here
-    // (the existing lineage view already does that job) -- this panel's
-    // marginal value is the external comparison, so only list edges that
-    // are either external or otherwise worth surfacing in this context.
-    for (const edge of visibleEdges) {
-      if (!isExternal(edge.source)) continue;
-      list.appendChild(this.renderEdge(edge));
-    }
-    if (this.showExternal && list.children.length === 0) {
-      const empty = document.createElement("p");
-      empty.className = "mgd-status";
-      empty.textContent = "No external edges for this project.";
-      section.appendChild(empty);
-    } else if (this.showExternal) {
-      section.appendChild(list);
+    if (this.showExternal) {
+      // P8.2: group external edges by their source Lean project (falling
+      // back to one unlabeled group when `sourceProject` can't be resolved,
+      // e.g. the older project2/3.json exports) so a combined multi-project
+      // export like P8.1's isn't one undifferentiated wall of edges.
+      const groups = new Map<string, DiscoveryEdge[]>();
+      for (const edge of visibleEdges) {
+        if (!isExternal(edge.source)) continue;
+        const key = edge.sourceProject ?? "";
+        const list = groups.get(key);
+        if (list) list.push(edge);
+        else groups.set(key, [edge]);
+      }
+      if (groups.size === 0) {
+        const empty = document.createElement("p");
+        empty.className = "mgd-status";
+        empty.textContent = "No external edges for this project.";
+        section.appendChild(empty);
+      } else {
+        for (const [repoSlug, edges] of groups) {
+          section.appendChild(this.renderEdgeGroup(project.projectLabel, repoSlug, edges));
+        }
+      }
     }
 
     return section;
+  }
+
+  /** P8.2: one source-project's edges, paginated ("paginated TheoremGraph results"). */
+  private renderEdgeGroup(projectLabel: string, repoSlug: string, edges: DiscoveryEdge[]): HTMLElement {
+    const box = document.createElement("div");
+    box.className = "mgd-edge-group";
+
+    if (repoSlug.length > 0) {
+      const heading = document.createElement("h5");
+      heading.className = "mgd-edge-group-title";
+      heading.textContent = `${repoSlug} (${edges.length})`;
+      box.appendChild(heading);
+    }
+
+    const groupKey = `${projectLabel}::${repoSlug}`;
+    const shown = Math.min(this.visibleCount[groupKey] ?? EDGES_PAGE_SIZE, edges.length);
+
+    const list = document.createElement("ul");
+    list.className = "mgd-edge-list";
+    for (const edge of edges.slice(0, shown)) list.appendChild(this.renderEdge(edge));
+    box.appendChild(list);
+
+    if (shown < edges.length) {
+      const more = document.createElement("button");
+      more.type = "button";
+      more.className = "mgd-show-more";
+      more.textContent = `Show more (${shown} of ${edges.length})`;
+      more.onclick = () => {
+        this.visibleCount[groupKey] = shown + EDGES_PAGE_SIZE;
+        this.render();
+      };
+      box.appendChild(more);
+    }
+
+    return box;
   }
 
   private renderEdge(edge: DiscoveryEdge): HTMLElement {

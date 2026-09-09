@@ -316,6 +316,14 @@ export class DynamicTaxonomyExplorer {
       scopeHint.className = "dt-scope-hint";
       scopeHint.textContent = t("mscScopeHint");
       wrap.appendChild(scopeHint);
+      // P8.2: this panel (the MSC/concept browser) and the Math-Graph
+      // discovery panel are deliberately kept separate (see
+      // `mathGraphDiscovery.ts`'s own P7.4 isolation rationale) — a plain
+      // cross-reference is the honest connection, not a UI merge.
+      const crossLink = document.createElement("p");
+      crossLink.className = "dt-scope-hint";
+      crossLink.textContent = t("theoremGraphCrossLink");
+      wrap.appendChild(crossLink);
       if (this.view.tab === "fields") {
         wrap.appendChild(this.view.field ? this.renderFieldDetail(this.view.field) : this.renderFieldGrid(this.data.fields));
       } else if (this.view.tab === "pending") {

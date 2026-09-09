@@ -453,6 +453,8 @@ export interface DiscoveryEdge {
   sourceKindLabel: string;
   license: string | null;
   locator: string | null;
+  /** P8.2: repo slug the subject declaration belongs to; null for Mathesis's own edges. */
+  sourceProject: string | null;
 }
 
 export interface DiscoveryCounts {
@@ -462,9 +464,19 @@ export interface DiscoveryCounts {
   mathGraphHierarchy: number;
 }
 
+/** P8.2: per-project (`repoSlug`) external-edge coverage — "coverage metrics". */
+export interface DiscoveryProjectCount {
+  repoSlug: string;
+  literalCount: number;
+  hierarchyCount: number;
+}
+
 export interface DiscoveryExport {
   projectLabel: string;
   releaseTag: string;
   edges: DiscoveryEdge[];
   counts: DiscoveryCounts;
+  byProject: DiscoveryProjectCount[];
+  /** Empty string when there are no external edges in this export. */
+  mscClassificationNote: string;
 }

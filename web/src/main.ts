@@ -116,10 +116,21 @@ const dynamicTaxonomy = new DynamicTaxonomyExplorer(dynamicTaxonomyRoot);
 const proofGraph = new ProofGraphExplorer(proofGraphRoot);
 // P7.4（`docs/P7_4_STATUS.md`）: 既存のdependencies.json/検索/系譜ビューとは
 // 独立した、追加専用のパネル——`math-graph-discovery-project{2,3}.json`が
-// 無いビルド(=未生成)でも404を静かに扱い、ページ全体を壊さない。
+// 無いビルド(=未生成)でも404を静かに扱い、ページ全体を壊さない
+// （P8.2で個別パス単位のfetchに直し、1本欠けても他が巻き添えで消えない
+// ようにした——`mathGraphDiscovery.ts::load`参照）。
+//
+// P8.2（`docs/P8_2_STATUS.md`）: 3本目は P8.1 の隔離パイロットDB
+// （FLT/carleson/PrimeNumberTheoremAnd + 既存2つのMathlib pilot、
+// `scratch/p8_1/pilot_provenance.db`）から書き出した derived index。
+// このファイルは意図的に`web/public/`へコミットしていない——本番公開の
+// 可否はユーザー自身の判断に委ねる、という前段(P8.1)の隔離方針をそのまま
+// 引き継ぐ。ローカルで`export-discovery`を実行し`web/public/`へ置けば
+// このパネルに現れる。無ければ404として静かに無視される。
 new MathGraphDiscoveryPanel(mathGraphDiscoveryRoot, [
   `${import.meta.env.BASE_URL}math-graph-discovery-project2.json`,
   `${import.meta.env.BASE_URL}math-graph-discovery-project3.json`,
+  `${import.meta.env.BASE_URL}math-graph-discovery-p8-1-pilot.json`,
 ]);
 // `parseLeanSource` もwasm側の関数なので、wasmが読み込み終わるまでは
 // `null`のまま——コンストラクタはそれを織り込み済みで「読み込み中」を表示する。

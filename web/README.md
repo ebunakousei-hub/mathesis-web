@@ -140,21 +140,34 @@ author情報はGitHubのnoreply形式
 **GitHub Pagesのproject subpath対応**: GitHub Pagesの
 `https://<user>.github.io/<repo>/`という配信形態では、`vite build`の
 既定（絶対パス`/assets/...`）のままだとアセットが404になる。
-`vite build --base=/mathesis-web/`でビルドし、さらに`src/dynamicTaxonomy.ts`・
-`src/proofGraph.ts`・`src/searchWorker.ts`にあった`fetch("/taxonomy.json")`
-等のハードコードされた絶対パスを`` fetch(`${import.meta.env.BASE_URL}taxonomy.json`) ``
-に修正した（ローカル開発時は`BASE_URL`が`/`のままなので従来どおり動く）。
+`src/dynamicTaxonomy.ts`・`src/proofGraph.ts`・`src/searchWorker.ts`に
+あった`fetch("/taxonomy.json")`等のハードコードされた絶対パスを
+`` fetch(`${import.meta.env.BASE_URL}taxonomy.json`) `` に修正済み
+（ローカル開発時は`BASE_URL`が`/`のままなので従来どおり動く）。
 
 公開URL: **https://ebunakousei-hub.github.io/mathesis-web/**
 
-再公開する場合の手順:
-```bash
-cd web
-npx tsc -b
-MSYS_NO_PATHCONV=1 npx vite build --base=/mathesis-web/   # Windows/Git Bashではpath mangling対策が要る
-# dist/ の中身を mathesis-web リポジトリのクローンへコピーしてcommit・push
-# （GitHub Pagesの再ビルドには数分かかる。gh api repos/<owner>/mathesis-web/pages/builds/latest で確認可能）
-```
+**PA.1（2026-09-09）以降の再公開手順**: `vite build --base=...`を毎回
+手で付ける旧手順は廃止した。`vite.config.ts`が`command === "build"`の
+ときだけ`base: "/mathesis-web/"`を自動で付ける（devサーバーはこれまで
+どおり`/`のまま）。公開は`.github/workflows/deploy-pages.yml`（GitHub
+Actions、Pages source = "GitHub Actions"）が担当し、`web/dist`を
+コミットする必要も、ローカルから手動でファイルをアップロードする必要も
+無い:
+
+- 通常のpush/PR: `cargo test --all` → `wasm-pack build` → `npm run
+  build` → `npm run eval` の検証のみ実行——**デプロイはしない**。
+- 実際にデプロイするのは、(a) Actionsタブから該当ワークフローを手動で
+  `workflow_dispatch`実行するか、(b) `web-release-*`という名前のタグを
+  pushしたときだけ（例: `git tag web-release-2026-09-09 && git push
+  origin web-release-2026-09-09`）。毎pushで自動デプロイはしない——
+  意図的な、追跡可能なリリースにするため。
+- 本番相当のデータ検証（`mathesis-provenance verify-release`）は
+  ワークフローには含まれていない——本番`scratch/provenance.db`自体を
+  このリポジトリにcommitしていないため（`.gitignore`の`/scratch/`参照）。
+  この検証は引き続き、`web/public/*.json`を再生成してcommitする**前**に
+  ローカルで実行するリリースゲートのまま（`docs/RELEASES.md`参照）。
+  詳細は`docs/PA_1_STATUS.md`。
 
 ### 公開直後の外部レビューで発見・修正した点（2026-09-05・同日）
 

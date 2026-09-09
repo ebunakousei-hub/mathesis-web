@@ -1,0 +1,105 @@
+name: Deploy Mathesis Web to GitHub Pages
+
+# PA.1 (docs/PA_1_STATUS.md): build+verify runs on every push/PR so
+# regressions are caught immediately, but the deploy job only runs on an
+# explicit manual trigger or an immutable "web-release-*" tag — never on
+# an ordinary push to main. See docs/PA_1_STATUS.md for why the release
+# gate (`mathesis-provenance verify-release`) is NOT run here: it needs
+# the live production `scratch/provenance.db`, which is deliberately not
+# committed to this repo (see .gitignore's own comment on /scratch/).
+# That check stays a local, pre-tag gate; this workflow re-verifies
+# whatever is already committed under web/public/ instead (npm run eval,
+# which reads exactly the files this build ships).
+
+on:
+  push:
+    branches: [main]
+    tags: ["web-release-*"]
+  pull_request:
+    branches: [main]
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build-and-verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@1.98.0
+        with:
+          targets: wasm32-unknown-unknown
+
+      - uses: Swatinem/rust-cache@v2
+
+      - uses: jetli/wasm-pack-action@v0.4.0
+        with:
+          version: v0.15.0
+
+      - name: cargo test --all (pure unit/integration tests — no Lean toolchain, no network)
+        run: cargo test --all
+
+      # 必ずcrates/mathesis-wasm/から実行する——.cargo/config.tomlの
+      # remap-path-prefixがこのディレクトリからのwasm-pack buildにしか
+      # 効かない（web/README.mdの2026-09-05監査ノート参照）。CIランナーの
+      # ビルドパスは元々ローカル個人情報を含まないが、ローカルとCIで
+      # 同じ手順を保つため踏襲する。
+      - name: Build the WASM kernel
+        working-directory: crates/mathesis-wasm
+        run: wasm-pack build --target web --out-dir pkg
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24.16.0"
+
+      - name: npm ci
+        working-directory: web
+        run: npm ci
+
+      - name: npm run build (production, /mathesis-web/ base baked into vite.config.ts)
+        working-directory: web
+        run: npm run build
+
+      - name: npm run eval (search/relation regression gate against the committed web/public/*.json)
+        working-directory: web
+        run: npm run eval
+
+      - name: Sanity-check the build output
+        working-directory: web
+        run: |
+          set -eu
+          test -f dist/index.html
+          test -f dist/404.html
+          test -f dist/.nojekyll
+          test -f dist/relations.json
+          test -f dist/assertions.json
+          find dist/assets -name '*.wasm' | grep -q .
+          grep -q '/mathesis-web/assets/' dist/index.html
+
+      - uses: actions/configure-pages@v5
+        if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/web-release-')
+
+      - uses: actions/upload-pages-artifact@v3
+        if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/web-release-')
+        with:
+          path: web/dist
+
+  deploy:
+    needs: build-and-verify
+    if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/web-release-')
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

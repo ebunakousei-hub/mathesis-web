@@ -42,9 +42,6 @@ jobs:
         with:
           version: v0.15.0
 
-      - name: cargo test --all (pure unit/integration tests — no Lean toolchain, no network)
-        run: cargo test --all
-
       # 必ずcrates/mathesis-wasm/から実行する——.cargo/config.tomlの
       # remap-path-prefixがこのディレクトリからのwasm-pack buildにしか
       # 効かない（web/README.mdの2026-09-05監査ノート参照）。CIランナーの
@@ -65,6 +62,14 @@ jobs:
       - name: npm run build (production, /mathesis-web/ base baked into vite.config.ts)
         working-directory: web
         run: npm run build
+
+      # cargo testはnpm run buildの後に置く——crates/mathesis-server は
+      # #[derive(RustEmbed)] で web/dist をコンパイル時に埋め込む(main.rs)
+      # ため、web/dist が存在しないと mathesis-server 自体のテストバイナリが
+      # コンパイルできない(2026-09-09、実際のCI失敗run 34306675766で発見:
+      # ローカルではweb/distが既に存在していたため気づけなかった)。
+      - name: cargo test --all (pure unit/integration tests — no Lean toolchain, no network)
+        run: cargo test --all
 
       - name: npm run eval (search/relation regression gate against the committed web/public/*.json)
         working-directory: web

@@ -167,7 +167,12 @@ Actions、Pages source = "GitHub Actions"）が担当し、`web/dist`を
   このリポジトリにcommitしていないため（`.gitignore`の`/scratch/`参照）。
   この検証は引き続き、`web/public/*.json`を再生成してcommitする**前**に
   ローカルで実行するリリースゲートのまま（`docs/RELEASES.md`参照）。
-  詳細は`docs/PA_1_STATUS.md`。
+  **`web/public/*.json`を再生成するときは`reconcile`/`web-export`を
+  手で個別に叩かず、必ず`bash scripts/regenerate-web-export.sh`を使う**
+  ——再生成と検証を1コマンドに不可分化し、「再生成し忘れる」余地を
+  構造的に無くした（過去に`traversalPolicy`フィールド追加時、実際に
+  再生成し忘れて本番に古い`relations.json`が残っていたことがある）。
+  詳細は`docs/PA_1_STATUS.md`・`docs/PA_2_STATUS.md`。
 
 ### 公開直後の外部レビューで発見・修正した点（2026-09-05・同日）
 

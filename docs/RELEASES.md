@@ -109,3 +109,17 @@ a stale commit/DB state even if its recorded hash was recomputed to
 match). One nonzero exit code means the release is not publishable. See
 `docs/P1_STATUS.md` and `docs/P2_STATUS.md` for exactly what this does and
 doesn't guarantee.
+
+**Regenerating `web/public/`'s exported files**: always use
+`scripts/regenerate-web-export.sh` (`bash scripts/regenerate-web-export.sh`
+from the repo root), never `reconcile`/`web-export` run by hand. This
+project has twice shipped a stale `web/public/*.json` after a schema
+change (P6.3's `traversalPolicy` field, caught during P7.2's own
+Definition-of-Done check) because regeneration and verification were two
+separate, separately-rememberable commands. The script runs
+`reconcile` → `web-export` → `verify-release` as one atomic sequence
+against the fixed local paths (`scratch/provenance.db`,
+`scratch/judgments.db`, `scratch/papers_100k_fc.db`) and exits non-zero
+if verification fails — regeneration and verification can no longer
+happen as two separate steps a person has to remember to chain
+(`docs/PA_2_STATUS.md`).

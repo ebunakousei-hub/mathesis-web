@@ -172,6 +172,15 @@ unresolvable even with it). Mathlib_v429 is the one partial exception:
 it carries a real `leanToolchain: v4.2.9` value, a weaker but genuine
 anchor the other 4 projects don't have at all.
 
+> **Correction (P8.7, `docs/P8_7_STATUS.md`)**: "a weaker but genuine
+> anchor" overstated this. `v4.2.7`/`v4.2.8`/`v4.2.9` were checked
+> directly against `leanprover/lean4`, `leanprover-community/mathlib4`,
+> and `leanprover-community/batteries` — none has any tag by that name.
+> It isn't a Lean release, a Mathlib tag, or anything independently
+> checkable; it doesn't anchor to anything outside the dataset itself.
+> Mathlib_v429 has *no* externally-verifiable revision either, same as
+> the other 4 projects — see P8.7 item 1.
+
 **Conclusion**: source revision is not reconstructable to a precise
 degree for the 4 non-Mathlib projects. A best-effort estimate is
 useful for corroborating findings (it strengthened Finding 2) but

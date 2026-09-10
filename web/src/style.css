@@ -2760,6 +2760,188 @@ table.demo-table code {
   border-color: var(--accent);
 }
 
+/* P8.3（docs/P8_3_STATUS.md）: 依存辺の主語・目的語を局所グラフへの
+   入り口ボタンにする。 */
+.mgd-edge-decl {
+  background: transparent;
+  border: none;
+  padding: 0;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  text-decoration: underline dotted;
+  text-underline-offset: 2px;
+}
+
+.mgd-edge-decl:hover {
+  color: var(--accent);
+}
+
+/* P8.3: the local dependency graph view (mathGraphLineageView.ts).
+   Deliberately its own class namespace, never .lin-* — see the module's
+   own doc comment: these are "structural external nodes," not ordinary
+   Lean declaration nodes, and must never look identical to the trusted
+   lineage view's nodes. */
+.mgl {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px dashed var(--panel-border);
+}
+
+.mgl-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 6px;
+}
+
+.mgl-title {
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.mgl-close {
+  background: transparent;
+  border: 1px solid var(--panel-border);
+  border-radius: 999px;
+  width: 22px;
+  height: 22px;
+  line-height: 1;
+  color: var(--text-dim);
+  cursor: pointer;
+  flex: none;
+}
+
+.mgl-close:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.mgl-viewport {
+  overflow: auto;
+  max-height: 50vh;
+  border: 1px dashed var(--panel-border);
+  border-radius: 10px;
+}
+
+.mgl-canvas {
+  position: relative;
+}
+
+.mgl-edges {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.mgl-edge {
+  fill: none;
+  stroke: #7a5a2a;
+  stroke-width: 1.4;
+  stroke-dasharray: 3 3;
+}
+
+.mgl-node {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 4px;
+  padding: 5px 8px;
+  text-align: left;
+  border-radius: 7px;
+  border: 1px dashed #7a5a2a;
+  background: transparent;
+  color: var(--text);
+  overflow: hidden;
+}
+
+.mgl-node-neighbor {
+  cursor: pointer;
+  transition: border-color 0.15s ease;
+}
+
+.mgl-node-neighbor:hover,
+.mgl-node-neighbor.is-detail-open {
+  border-color: var(--accent);
+  border-style: solid;
+}
+
+.mgl-node-focus {
+  border-style: solid;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent) inset;
+}
+
+.mgl-node-name {
+  font-family: ui-monospace, Menlo, Consolas, monospace;
+  font-size: 10.5px;
+  line-height: 1.3;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mgl-node-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.mgl-node-badge {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  border: 1px solid var(--panel-border);
+}
+
+.mgl-node-badge.mgd-badge-literal {
+  background: #3a5a7a;
+}
+
+.mgl-node-badge.mgd-badge-hierarchy {
+  background: #7a5a2a;
+}
+
+.mgl-node-info {
+  font-size: 10px;
+  color: var(--text-dim);
+  cursor: pointer;
+}
+
+.mgl-node-info:hover {
+  color: var(--accent);
+}
+
+.mgl-omitted {
+  position: absolute;
+  font-size: 10px;
+  color: var(--text-dim);
+  padding: 4px 0;
+}
+
+.mgl-detail {
+  margin: 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--panel-border);
+  border-radius: 8px;
+}
+
+.mgl-detail-meta {
+  margin-top: 4px;
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.mgl-detail-locator {
+  margin-top: 4px;
+  font-size: 11px;
+  color: var(--text-dim);
+  font-family: monospace;
+  word-break: break-word;
+}
+
 /* ---- データ範囲とライセンス (#data-scope) ---- */
 
 .scope-link {

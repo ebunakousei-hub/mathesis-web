@@ -7,24 +7,27 @@
  * 触れない。既定は「外部の発見を隠す」——ユーザーが明示的にトグルを
  * 押すまでMath-Graph由来の辺は一切表示しない。
  */
+import { renderMathGraphLineage, type MathGraphLineageState } from "./mathGraphLineageView";
 import type { DiscoveryEdge, DiscoveryExport, DiscoverySource } from "./types";
 import { escapeHtml, reportProvenanceIssue } from "./util";
 
-const SOURCE_LABEL: Record<DiscoverySource, string> = {
+/** P8.3: exported so `mathGraphLineageView.ts` can label edges the same way,
+ * without a second, potentially-diverging copy of these strings. */
+export const SOURCE_LABEL: Record<DiscoverySource, string> = {
   "mathesis-checker": "Mathesis checker-derived (own Lean build)",
   "mathesis-text": "Mathesis text-extracted",
   "math-graph-literal": "Math-Graph literal dependency (external)",
   "math-graph-hierarchy": "Math-Graph typeclass-hierarchy discovery (external)",
 };
 
-const SOURCE_BADGE_CLASS: Record<DiscoverySource, string> = {
+export const SOURCE_BADGE_CLASS: Record<DiscoverySource, string> = {
   "mathesis-checker": "mgd-badge-checker",
   "mathesis-text": "mgd-badge-text",
   "math-graph-literal": "mgd-badge-literal",
   "math-graph-hierarchy": "mgd-badge-hierarchy",
 };
 
-function isExternal(source: DiscoverySource): boolean {
+export function isExternal(source: DiscoverySource): boolean {
   return source === "math-graph-literal" || source === "math-graph-hierarchy";
 }
 
@@ -43,6 +46,11 @@ export class MathGraphDiscoveryPanel {
   /** プロジェクトグループ単位(`projectLabel`+`repoSlug`)で「もっと見る」を
    * 何回押したか。キーが無ければ1ページ目(`EDGES_PAGE_SIZE`件)だけ表示。 */
   private visibleCount: Record<string, number> = {};
+  /** P8.3（`docs/P8_3_STATUS.md`）: グラフビューの現在の焦点。null なら
+   * どのグループでも開いていない——一度に1つだけ開く（複数グループの
+   * 局所近傍を同時に表示すると、どのプロジェクトの図か分かりにくくなる
+   * ため、意図的に単一の状態に絞ってある）。 */
+  private lineageState: MathGraphLineageState | null = null;
 
   constructor(root: HTMLElement, private sourcePaths: string[]) {
     this.root = root;
@@ -249,7 +257,7 @@ export class MathGraphDiscoveryPanel {
 
     const list = document.createElement("ul");
     list.className = "mgd-edge-list";
-    for (const edge of edges.slice(0, shown)) list.appendChild(this.renderEdge(edge));
+    for (const edge of edges.slice(0, shown)) list.appendChild(this.renderEdge(edge, repoSlug));
     box.appendChild(list);
 
     if (shown < edges.length) {
@@ -264,28 +272,98 @@ export class MathGraphDiscoveryPanel {
       box.appendChild(more);
     }
 
+    // P8.3: the graph view for this specific repo group, if it's the one
+    // currently focused (renderMathGraphLineage is a stateless render
+    // function — this class owns `lineageState`, matching the rest of the
+    // codebase's "state lives in the panel, re-rendered wholesale" convention).
+    if (this.lineageState !== null && this.lineageState.repoSlug === repoSlug) {
+      const state = this.lineageState;
+      box.appendChild(
+        renderMathGraphLineage(edges, state, {
+          onFocus: (label) => {
+            this.lineageState = { ...state, focus: label, detailFor: null };
+            this.render();
+          },
+          onToggleDetail: (label) => {
+            this.lineageState = { ...state, detailFor: state.detailFor === label ? null : label };
+            this.render();
+          },
+          onClose: () => {
+            this.lineageState = null;
+            this.render();
+          },
+        }),
+      );
+    }
+
     return box;
   }
 
-  private renderEdge(edge: DiscoveryEdge): HTMLElement {
+  /**
+   * P8.3: `subject`/`object`は`<button>`——クリックでその宣言を焦点にした
+   * 局所依存グラフ（`mathGraphLineageView.ts`）を開く。`repoSlug`だけ渡せば
+   * 十分——実際に近傍を組むための辺配列は`renderEdgeGroup`が
+   * `this.lineageState.repoSlug`が一致したときに直接渡す（同じグループの
+   * 辺だけで近傍を組む。他プロジェクトの宣言と混ざらないように——P8.1の
+   * 5プロジェクト統合exportで特に重要）。
+   */
+  private renderEdge(edge: DiscoveryEdge, repoSlug: string): HTMLElement {
     const li = document.createElement("li");
     li.className = "mgd-edge-item";
     const badgeClass = SOURCE_BADGE_CLASS[edge.source];
-    li.innerHTML = `
-      <div class="mgd-edge-row">
-        <span class="mgd-badge ${badgeClass}">${escapeHtml(SOURCE_LABEL[edge.source])}</span>
-        <span class="mgd-edge-relation">${escapeHtml(edge.subject)} &rarr; ${escapeHtml(edge.object)}</span>
-      </div>
-      <div class="mgd-edge-meta">
-        epistemic state: <b>${escapeHtml(edge.epistemicState)}</b> ·
-        traversal: <b>${escapeHtml(edge.traversalPolicy)}</b>
-        ${edge.edgeType ? ` · edge type: ${escapeHtml(edge.edgeType)}` : ""}
-      </div>
-      <div class="mgd-edge-attribution">
-        External dataset: Math-Graph${edge.license ? ` &mdash; ${escapeHtml(edge.license)}` : ""} &mdash; not independently verified by Mathesis.
-      </div>
-      ${edge.locator ? `<div class="mgd-edge-locator">${escapeHtml(edge.locator)}</div>` : ""}
+
+    const row = document.createElement("div");
+    row.className = "mgd-edge-row";
+    const badge = document.createElement("span");
+    badge.className = `mgd-badge ${badgeClass}`;
+    badge.textContent = SOURCE_LABEL[edge.source];
+    row.appendChild(badge);
+
+    const relation = document.createElement("span");
+    relation.className = "mgd-edge-relation";
+    const openGraph = (label: string) => {
+      this.lineageState = { repoSlug, focus: label, detailFor: null };
+      this.render();
+    };
+    const subjectBtn = document.createElement("button");
+    subjectBtn.type = "button";
+    subjectBtn.className = "mgd-edge-decl";
+    subjectBtn.textContent = edge.subject;
+    subjectBtn.title = "View local dependency graph";
+    subjectBtn.onclick = () => openGraph(edge.subject);
+    relation.appendChild(subjectBtn);
+    relation.append(" → ");
+    const objectBtn = document.createElement("button");
+    objectBtn.type = "button";
+    objectBtn.className = "mgd-edge-decl";
+    objectBtn.textContent = edge.object;
+    objectBtn.title = "View local dependency graph";
+    objectBtn.onclick = () => openGraph(edge.object);
+    relation.appendChild(objectBtn);
+    row.appendChild(relation);
+    li.appendChild(row);
+
+    const meta = document.createElement("div");
+    meta.className = "mgd-edge-meta";
+    meta.innerHTML = `
+      epistemic state: <b>${escapeHtml(edge.epistemicState)}</b> ·
+      traversal: <b>${escapeHtml(edge.traversalPolicy)}</b>
+      ${edge.edgeType ? ` · edge type: ${escapeHtml(edge.edgeType)}` : ""}
     `;
+    li.appendChild(meta);
+
+    const attribution = document.createElement("div");
+    attribution.className = "mgd-edge-attribution";
+    attribution.textContent = `External dataset: Math-Graph${edge.license ? ` — ${edge.license}` : ""} — not independently verified by Mathesis.`;
+    li.appendChild(attribution);
+
+    if (edge.locator) {
+      const locator = document.createElement("div");
+      locator.className = "mgd-edge-locator";
+      locator.textContent = edge.locator;
+      li.appendChild(locator);
+    }
+
     return li;
   }
 }

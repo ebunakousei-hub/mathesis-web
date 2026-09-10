@@ -44,7 +44,7 @@ app.
   Skips rebuilding (unless `--force`) when the recorded input SHA-256
   hashes and importer/schema version already match.
 - **`verify_index_p8_6.py`** — compares the new query path against the
-  existing CSV-streaming ground truth for one fixed project (see below).
+  existing CSV-streaming ground truth, project by project (see below).
 - **`bench_index_p8_6.py`** — timing and disk-usage measurement.
 - **`index.sqlite`** (2.83GB, gitignored via the blanket `/scratch/` rule)
   — the canonical index. Three tables (`projects`, `statements`,
@@ -101,12 +101,19 @@ for future provenance validation."
   pair was already downloaded at, is fully closed — nothing points
   further outside than that.
 
-## Verification: old path vs. new path, on `pfr`
+## Verification: old path vs. new path
 
 Per the directive's item 4, the old CSV-streaming parser and the new
-SQLite-backed query were run side by side on one fixed project — `pfr`
-(P8.4's addition, the freshest ground truth) — and compared before the
-new path is used for anything going forward.
+SQLite-backed query were run side by side and compared before the new
+path is used for anything going forward.
+
+Originally run against one fixed project (`pfr`, P8.4's addition — the
+freshest ground truth). **Extended on 2026-09-10** to all 4 non-Mathlib
+projects `classify_project()` supports, because `pfr` alone never
+exercises the `project_attribution_unresolved` rule (it has zero
+unresolved declarations) — exactly the rule P8.5 added and the one most
+worth verifying. `PrimeNumberTheoremAnd` is the strongest test available:
+2,557 of its 5,108 scanned declarations get excluded by that rule alone.
 
 "Byte-for-byte" is interpreted here as **exact content equality**, not
 identical physical row ordering: the old scripts' order is incidental
@@ -117,17 +124,24 @@ hashable tuples before comparing, so the check is robust to ordering
 either way and actually verifies the property that matters — no
 declaration or edge gained, lost, or altered.
 
-```
-=== Scope check: pfr ===
-  statements: old=1073 new=1073 missing_from_new=0 extra_in_new=0 -> OK
-  edges: old=66996 new=66996 missing_from_new=0 extra_in_new=0 -> OK
+| project | statements | edges | safe statements | safe edges | attribution-excluded |
+|---|---|---|---|---|---|
+| FLT | 2368/2368 | 115940/115940 | 498/498 | 775/775 | 9 |
+| carleson | 2852/2852 | 210090/210090 | 54/54 | 39/39 | 0 |
+| PrimeNumberTheoremAnd | 5108/5108 | 311218/311218 | 17/17 | 2/2 | 2557 |
+| pfr | 1073/1073 | 66996/66996 | 43/43 | 25/25 | 0 |
 
-=== Classify check: pfr (expected dir 'PFR') ===
-  safe statements: old=43 new=43 missing_from_new=0 extra_in_new=0 -> OK
-  safe edges: old=25 new=25 missing_from_new=0 extra_in_new=0 -> OK
+`ALL CHECKS PASSED (4 project(s))` — every `old/new` pair above is an
+exact match.
 
-=== ALL CHECKS PASSED ===
-```
+Zero drift across every project the new path supports, including the one
+(`PrimeNumberTheoremAnd`) where the attribution rule does the most work.
+Per the directive's item 3, the old per-round `scope_pilot_p8_N.py` /
+CSV-streaming path is now treated as a slower reference implementation —
+future project onboarding uses `pilot_index_lib.classify_project()`
+against the index, not a new streaming script. Re-run with
+`python verify_index_p8_6.py [repo_slug ...]` (defaults to all 4) if the
+index or the classification rule ever changes.
 
 `Mathlib_v429` is deliberately **not** covered by this query path.
 Its literal/candidate split comes from a cross-reference against

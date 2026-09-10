@@ -440,7 +440,7 @@ export interface LeanParseResult {
  * ——`judgment:mathgraph:`名前空間のassertionは数値idの契約に乗らない
  * ため（P7.1）、そもそもそちらには出せない。
  */
-export type DiscoverySource = "mathesis-checker" | "mathesis-text" | "math-graph-literal" | "math-graph-hierarchy";
+export type DiscoverySource = "mathesis-checker" | "mathesis-text" | "math-graph-literal" | "math-graph-structural-candidate";
 
 export interface DiscoveryEdge {
   assertionId: number;
@@ -461,14 +461,14 @@ export interface DiscoveryCounts {
   mathesisChecker: number;
   mathesisText: number;
   mathGraphLiteral: number;
-  mathGraphHierarchy: number;
+  mathGraphStructuralCandidate: number;
 }
 
 /** P8.2: per-project (`repoSlug`) external-edge coverage — "coverage metrics". */
 export interface DiscoveryProjectCount {
   repoSlug: string;
   literalCount: number;
-  hierarchyCount: number;
+  structuralCandidateCount: number;
 }
 
 export interface DiscoveryExport {

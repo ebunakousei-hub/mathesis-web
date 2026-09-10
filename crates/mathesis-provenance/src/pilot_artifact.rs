@@ -28,8 +28,21 @@ pub struct ProjectReport {
     pub scope_note: String,
     pub declarations_total: i64,
     pub declarations_literal: i64,
-    pub declarations_typeclass_hierarchy: i64,
+    pub declarations_external_structural_candidate: i64,
     pub declarations_excluded: i64,
+    /// P8.5（`docs/P8_5_STATUS.md`）: declarations whose `filePath` doesn't
+    /// start with the project's own expected top-level directory —
+    /// discovered when a full-scope directory breakdown (not just the 20
+    /// spot-checked declarations) found that 92 of PrimeNumberTheoremAnd's
+    /// 109 already-imported `external_structural_candidate` declarations
+    /// actually live under `LeanCert/`/`PrimeCert/`/`Architect/`, and 9 of
+    /// FLT's live under a bare `Mathlib/` that doesn't exist in FLT's own
+    /// repo tree at all. `#[serde(default)]` so older scope reports
+    /// (pre-P8.5, before this check existed) still deserialize — they
+    /// simply report 0 here, which is honest (the check wasn't run, not
+    /// that nothing was found).
+    #[serde(default)]
+    pub declarations_project_attribution_unresolved: i64,
     pub edges_imported: Option<i64>,
     pub duplicate_groups: Option<i64>,
     pub duplicate_extra_rows: Option<i64>,
@@ -42,8 +55,10 @@ pub struct ProjectReport {
 pub struct ScopeTotals {
     pub declarations: i64,
     pub declarations_literal: i64,
-    pub declarations_typeclass_hierarchy: i64,
+    pub declarations_external_structural_candidate: i64,
     pub declarations_excluded: i64,
+    #[serde(default)]
+    pub declarations_project_attribution_unresolved: i64,
     pub edges_imported: i64,
     pub duplicate_groups: i64,
     pub duplicate_extra_rows: i64,
@@ -160,13 +175,23 @@ pub fn build_manifest(
             "Graph-structure-only: no theorem/proof/context text imported, matching every prior \
              Math-Graph pilot pass (P7-P7.4)."
                 .to_string(),
-            "For the 3 non-Mathlib projects (PrimeNumberTheoremAnd, FLT, carleson), the `literal` \
+            "For the 4 non-Mathlib projects (PrimeNumberTheoremAnd, FLT, carleson, pfr), the `literal` \
              classification is structurally unavailable — Mathesis has never independently \
              extracted those projects, so there is nothing to cross-reference against."
                 .to_string(),
-            "The typeclass-hierarchy classification rule (P7.3) was derived and validated against \
-             Mathlib data specifically; applying it to non-Mathlib projects here is an \
-             unvalidated extrapolation, not a re-confirmed fact — see docs/P8_1_STATUS.md."
+            "P8.5 (docs/P8_5_STATUS.md): `external_structural_candidate` (renamed from \
+             `external_typeclass_hierarchy`) means only 'zero Math-Graph-recorded proof-type \
+             outgoing edges' — a real spot-check against live Lean source found declarations \
+             carrying this classification with substantive tactic proofs (FLT's \
+             InverseLimit.instGroup, pfr's IsMarkovKernel-deleteRight instance). It does not mean \
+             'no proof exists' or 'confirmed typeclass-hierarchy position' — see \
+             docs/DATA_DICTIONARY.md's four-concepts table."
+                .to_string(),
+            "P8.5: every declaration whose filePath falls outside its project's own expected \
+             top-level directory is excluded as `project_attribution_unresolved`, not silently \
+             imported — found via full per-project path auditing, not just a sample \
+             (PrimeNumberTheoremAnd's dataset attribution included substantial unrelated tooling \
+             content under LeanCert/PrimeCert/Architect; see docs/P8_5_STATUS.md)."
                 .to_string(),
         ],
     })
@@ -183,8 +208,9 @@ mod tests {
                 scope_note: "2 target namespaces".into(),
                 declarations_total: 62,
                 declarations_literal: 20,
-                declarations_typeclass_hierarchy: 42,
+                declarations_external_structural_candidate: 42,
                 declarations_excluded: 1,
+                declarations_project_attribution_unresolved: 0,
                 edges_imported: Some(48),
                 duplicate_groups: Some(0),
                 duplicate_extra_rows: Some(0),
@@ -194,8 +220,9 @@ mod tests {
             totals: ScopeTotals {
                 declarations: 62,
                 declarations_literal: 20,
-                declarations_typeclass_hierarchy: 42,
+                declarations_external_structural_candidate: 42,
                 declarations_excluded: 1,
+                declarations_project_attribution_unresolved: 0,
                 edges_imported: 48,
                 duplicate_groups: 0,
                 duplicate_extra_rows: 0,

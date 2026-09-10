@@ -81,18 +81,34 @@ pub const MATH_GRAPH_ATTRIBUTION: &str =
     "Math-Graph (uw-math-ai), https://huggingface.co/datasets/uw-math-ai/math-graph — dataset for \"TheoremGraph: Bridging Formal and Informal Mathematics\" (arXiv:2606.25363)";
 pub const MATH_GRAPH_SOURCE_URL: &str = "https://huggingface.co/datasets/uw-math-ai/math-graph";
 
+/// P8.5（`docs/P8_5_STATUS.md`）: `ExternalStructuralCandidate`は
+/// `ExternalTypeclassHierarchy`から改名した——実データに対する抜き取り検証
+/// （実際のGitHubソースを読む）で、この分類が実際には保証していない
+/// ことが分かった。P7.3のルール（`kind ∈ {inst, instance}` かつ
+/// Math-Graph自身が記録した`proof`型の出辺が0件）が本当に確認できるのは
+/// 「Math-Graphの辺抽出が"proof"型の依存を1本も記録していない」ことだけ
+/// ——「証明が実際に書かれていない」ことでも「これが本当に型クラス階層
+/// ノードである」ことでもない。FLTの`InverseLimit.instGroup`（6個の
+/// フィールド全てに`by simp`/`by ext i`という実質的なタクティク証明）や
+/// pfrの`IsMarkovKernel (deleteRight κ)`（`by rw [...]; apply ... (by
+/// fun_prop)`）が、この分類を受けながら実際には有意な証明を持っていた
+/// ——`simp`/`fun_prop`のようなタクティクは名前付きの宣言を明示的に
+/// 引用しない場合、Math-Graph側の辺抽出に記録されないらしい。
+/// `docs/DATA_DICTIONARY.md`「proof-edge absent / proof absent /
+/// hierarchy position / unresolved external semantics」の4区分のうち、
+/// この分類が実際に証明できるのは最初の1つだけ。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ExternalClassification {
     ExternalLiteralDependency,
-    ExternalTypeclassHierarchy,
+    ExternalStructuralCandidate,
 }
 
 impl ExternalClassification {
     pub fn as_str(self) -> &'static str {
         match self {
             Self::ExternalLiteralDependency => "external_literal_dependency",
-            Self::ExternalTypeclassHierarchy => "external_typeclass_hierarchy",
+            Self::ExternalStructuralCandidate => "external_structural_candidate",
         }
     }
 }
@@ -143,6 +159,16 @@ pub struct ImportStats {
     /// ユーザー指示による意図的な除外——`dependencies_outside_pilot_scope`
     /// (スコープ外)とは別の理由による除外なので、別カウンタで数える。
     pub dependencies_excluded_proof_edge: usize,
+    /// P8.5（`docs/P8_5_STATUS.md`）: `import_pilot`に`expected_top_level_dir`
+    /// を渡したときだけ増える。`filePath`がそのプロジェクト自身の期待する
+    /// 先頭ディレクトリで始まらない宣言——実データで発見: Math-Graphの
+    /// "PrimeNumberTheoremAnd"は5,108件中2,557件が`LeanCert`/`PrimeCert`/
+    /// `Architect`という無関係なツール群のディレクトリ配下だった。これらは
+    /// **取り込まれない**（`in_scope`に入らない——後続のkind/proof-edge判定
+    /// にすら進まない）。呼び出し元がこの引数を渡さなければ(`None`)このガード
+    /// 自体が走らない——Pythonの事前フィルタだけに頼っていた従来のCLI呼び出し
+    /// との後方互換のため。CLI(`run_import_math_graph`)は常に`Some`を渡す。
+    pub declarations_project_attribution_unresolved: usize,
 }
 
 fn mathgraph_ref(statement_id: &str) -> String {
@@ -209,17 +235,34 @@ fn import_statement(
 /// JSON(P6.2のMathlib部分木2件と同じ名前空間、`Mathlib_v429`のみ)。
 /// `release`は呼び出し側が事前に作成済みのものを渡す(このアダプタは
 /// リリースを新設しない、`openalex_adapter::import`と同じ流儀)。
+///
+/// `expected_top_level_dir`（P8.5、`docs/P8_5_STATUS.md`）: `Some(dir)`なら
+/// `filePath`が`dir`で始まらない宣言を**取り込み前に**弾く——Pythonの
+/// スコープ・分類スクリプトが正しく動いたことへの信頼だけに頼らない、
+/// 構造的な保証にするため（ディレクティブ項目6「unverified project
+/// attribution cannot enter the publishable subset」）。`None`は既存の
+/// 呼び出し元・テストとの後方互換用で、チェック自体を素通しする。
 pub fn import_pilot(
     prov: &ProvenanceStore,
     release: ReleaseId,
     statements: &[PilotStatement],
     edges: &[PilotEdge],
     dataset_revision: &str,
+    expected_top_level_dir: Option<&str>,
 ) -> anyhow::Result<ImportStats> {
     let mut stats = ImportStats::default();
     let mut in_scope: HashMap<&str, &PilotStatement> = HashMap::new();
+    let mut attribution_filtered_ids: std::collections::HashSet<&str> = std::collections::HashSet::new();
 
     for stmt in statements {
+        if let Some(expected) = expected_top_level_dir {
+            let top_dir = stmt.file_path.split('/').next().unwrap_or(stmt.file_path.as_str());
+            if top_dir != expected {
+                stats.declarations_project_attribution_unresolved += 1;
+                attribution_filtered_ids.insert(stmt.statement_id.as_str());
+                continue;
+            }
+        }
         let already = prov.resolve_entity_ref(&mathgraph_ref(&stmt.statement_id))?.is_some();
         import_statement(prov, stmt, dataset_revision)?;
         if already {
@@ -232,6 +275,13 @@ pub fn import_pilot(
 
     for edge in edges {
         let Some(src) = in_scope.get(edge.src_id.as_str()) else {
+            if attribution_filtered_ids.contains(edge.src_id.as_str()) {
+                // P8.5: its source declaration was filtered by the
+                // attribution check above, not a scope_pilot.py bug —
+                // treat exactly like any other out-of-scope target.
+                stats.dependencies_outside_pilot_scope += 1;
+                continue;
+            }
             // scope_pilot.pyはsrc_idが常にスコープ内であることを保証する
             // ——これが起きたら呼び出し側の前提が崩れている。
             anyhow::bail!("edge src_id {} is not among the given statements — pilot_edges.json/pilot_statements.json out of sync?", edge.src_id);
@@ -306,7 +356,7 @@ pub fn import_pilot(
             // 情報を握り潰すことになる(P6.2の教訓「実測しないまま丸めない」)。
             dependency_origin: Some(edge.edge_type.clone()),
             // P7.4: この辺の起点(`src`)がP7.3でどう分類されたか
-            // (external_literal_dependency / external_typeclass_hierarchy)。
+            // (external_literal_dependency / external_structural_candidate)。
             external_classification: Some(src.classification.as_str().to_string()),
         })?;
         stats.dependencies_imported += 1;
@@ -401,7 +451,7 @@ mod tests {
         ];
         let edges = vec![PilotEdge { src_id: "s1".into(), dep_id: "s2".into(), edge_type: "sig".into(), role: None, via_proj: false }];
 
-        let stats = prov.transaction(|| import_pilot(&prov, release, &statements, &edges, "rev-1")).unwrap();
+        let stats = prov.transaction(|| import_pilot(&prov, release, &statements, &edges, "rev-1", None)).unwrap();
         assert_eq!(stats.declarations_imported, 2);
         assert_eq!(stats.dependencies_imported, 1);
         assert_eq!(stats.dependencies_outside_pilot_scope, 0);
@@ -434,25 +484,25 @@ mod tests {
         ];
         let edges = vec![PilotEdge { src_id: "s1".into(), dep_id: "s2".into(), edge_type: "proof".into(), role: None, via_proj: false }];
 
-        let stats = prov.transaction(|| import_pilot(&prov, release, &statements, &edges, "rev-1")).unwrap();
+        let stats = prov.transaction(|| import_pilot(&prov, release, &statements, &edges, "rev-1", None)).unwrap();
         assert_eq!(stats.dependencies_imported, 0);
         assert_eq!(stats.dependencies_excluded_proof_edge, 1);
         assert_eq!(prov.list_assertions_for_release(release).unwrap().len(), 0, "declarations import even though their proof edge is excluded");
     }
 
     #[test]
-    fn typeclass_hierarchy_classification_round_trips() {
+    fn external_structural_candidate_classification_round_trips() {
         let (prov, release) = store_with_release();
         let statements = vec![
-            stmt("s1", "OrderDual.instMonoid", "Mathlib.Algebra.Order.Group.Synonym", ExternalClassification::ExternalTypeclassHierarchy),
-            stmt("s2", "OrderDual.instSemigroup", "Mathlib.Algebra.Order.Group.Synonym", ExternalClassification::ExternalTypeclassHierarchy),
+            stmt("s1", "OrderDual.instMonoid", "Mathlib.Algebra.Order.Group.Synonym", ExternalClassification::ExternalStructuralCandidate),
+            stmt("s2", "OrderDual.instSemigroup", "Mathlib.Algebra.Order.Group.Synonym", ExternalClassification::ExternalStructuralCandidate),
         ];
         let edges = vec![PilotEdge { src_id: "s1".into(), dep_id: "s2".into(), edge_type: "def".into(), role: None, via_proj: false }];
 
-        prov.transaction(|| import_pilot(&prov, release, &statements, &edges, "rev-1")).unwrap();
+        prov.transaction(|| import_pilot(&prov, release, &statements, &edges, "rev-1", None)).unwrap();
         let a = &prov.list_assertions_for_release(release).unwrap()[0];
         let evidence = &prov.evidence_for(a.id).unwrap()[0];
-        assert_eq!(evidence.external_classification.as_deref(), Some("external_typeclass_hierarchy"));
+        assert_eq!(evidence.external_classification.as_deref(), Some("external_structural_candidate"));
     }
 
     #[test]
@@ -461,7 +511,7 @@ mod tests {
         let statements = vec![stmt("s1", "Foo.bar", "Mathlib.Foo", ExternalClassification::ExternalLiteralDependency)];
         let edges = vec![PilotEdge { src_id: "s1".into(), dep_id: "outside-the-scope".into(), edge_type: "sig".into(), role: None, via_proj: false }];
 
-        let stats = prov.transaction(|| import_pilot(&prov, release, &statements, &edges, "rev-1")).unwrap();
+        let stats = prov.transaction(|| import_pilot(&prov, release, &statements, &edges, "rev-1", None)).unwrap();
         assert_eq!(stats.dependencies_imported, 0);
         assert_eq!(stats.dependencies_outside_pilot_scope, 1);
         assert_eq!(prov.list_assertions_for_release(release).unwrap().len(), 0);
@@ -475,7 +525,7 @@ mod tests {
         let (prov, release) = store_with_release();
         let statements = vec![stmt("s1", "Foo.bar", "Mathlib.Foo", ExternalClassification::ExternalLiteralDependency)];
         let edges = vec![PilotEdge { src_id: "s1".into(), dep_id: "s1".into(), edge_type: "def".into(), role: None, via_proj: false }];
-        let stats = prov.transaction(|| import_pilot(&prov, release, &statements, &edges, "rev-1")).unwrap();
+        let stats = prov.transaction(|| import_pilot(&prov, release, &statements, &edges, "rev-1", None)).unwrap();
         assert_eq!(stats.dependencies_imported, 1, "adapter itself does not filter self-loops — scope_pilot.py already did");
     }
 
@@ -488,8 +538,8 @@ mod tests {
         ];
         let edges = vec![PilotEdge { src_id: "s1".into(), dep_id: "s2".into(), edge_type: "sig".into(), role: None, via_proj: false }];
 
-        prov.transaction(|| import_pilot(&prov, release, &statements, &edges, "rev-1")).unwrap();
-        let second = prov.transaction(|| import_pilot(&prov, release, &statements, &edges, "rev-1")).unwrap();
+        prov.transaction(|| import_pilot(&prov, release, &statements, &edges, "rev-1", None)).unwrap();
+        let second = prov.transaction(|| import_pilot(&prov, release, &statements, &edges, "rev-1", None)).unwrap();
         assert_eq!(second.declarations_imported, 0);
         assert_eq!(second.declarations_skipped_existing, 2);
         assert_eq!(second.dependencies_imported, 0);
@@ -505,16 +555,16 @@ mod tests {
     fn remove_project_removes_only_the_named_project_and_leaves_the_other_intact() {
         let (prov, release) = store_with_release();
         let statements = vec![
-            stmt_in_project("a1", "ProjA.one", "ProjectA", ExternalClassification::ExternalTypeclassHierarchy),
-            stmt_in_project("a2", "ProjA.two", "ProjectA", ExternalClassification::ExternalTypeclassHierarchy),
-            stmt_in_project("b1", "ProjB.one", "ProjectB", ExternalClassification::ExternalTypeclassHierarchy),
-            stmt_in_project("b2", "ProjB.two", "ProjectB", ExternalClassification::ExternalTypeclassHierarchy),
+            stmt_in_project("a1", "ProjA.one", "ProjectA", ExternalClassification::ExternalStructuralCandidate),
+            stmt_in_project("a2", "ProjA.two", "ProjectA", ExternalClassification::ExternalStructuralCandidate),
+            stmt_in_project("b1", "ProjB.one", "ProjectB", ExternalClassification::ExternalStructuralCandidate),
+            stmt_in_project("b2", "ProjB.two", "ProjectB", ExternalClassification::ExternalStructuralCandidate),
         ];
         let edges = vec![
             PilotEdge { src_id: "a1".into(), dep_id: "a2".into(), edge_type: "def".into(), role: None, via_proj: false },
             PilotEdge { src_id: "b1".into(), dep_id: "b2".into(), edge_type: "def".into(), role: None, via_proj: false },
         ];
-        prov.transaction(|| import_pilot(&prov, release, &statements, &edges, "rev-1")).unwrap();
+        prov.transaction(|| import_pilot(&prov, release, &statements, &edges, "rev-1", None)).unwrap();
         assert_eq!(prov.entity_count().unwrap(), 4);
         assert_eq!(prov.assertion_count().unwrap(), 2);
 
@@ -533,8 +583,8 @@ mod tests {
     #[test]
     fn remove_project_reports_zero_for_an_unknown_repo_slug_without_touching_anything() {
         let (prov, release) = store_with_release();
-        let statements = vec![stmt_in_project("a1", "ProjA.one", "ProjectA", ExternalClassification::ExternalTypeclassHierarchy)];
-        prov.transaction(|| import_pilot(&prov, release, &statements, &[], "rev-1")).unwrap();
+        let statements = vec![stmt_in_project("a1", "ProjA.one", "ProjectA", ExternalClassification::ExternalStructuralCandidate)];
+        prov.transaction(|| import_pilot(&prov, release, &statements, &[], "rev-1", None)).unwrap();
 
         let stats = prov.transaction(|| remove_project(&prov, "NoSuchProject")).unwrap();
         assert_eq!(stats.declarations_removed, 0);
@@ -548,18 +598,147 @@ mod tests {
     fn a_removed_project_can_be_reimported_to_identical_counts() {
         let (prov, release) = store_with_release();
         let statements = vec![
-            stmt_in_project("a1", "ProjA.one", "ProjectA", ExternalClassification::ExternalTypeclassHierarchy),
-            stmt_in_project("a2", "ProjA.two", "ProjectA", ExternalClassification::ExternalTypeclassHierarchy),
+            stmt_in_project("a1", "ProjA.one", "ProjectA", ExternalClassification::ExternalStructuralCandidate),
+            stmt_in_project("a2", "ProjA.two", "ProjectA", ExternalClassification::ExternalStructuralCandidate),
         ];
         let edges = vec![PilotEdge { src_id: "a1".into(), dep_id: "a2".into(), edge_type: "def".into(), role: None, via_proj: false }];
-        prov.transaction(|| import_pilot(&prov, release, &statements, &edges, "rev-1")).unwrap();
+        prov.transaction(|| import_pilot(&prov, release, &statements, &edges, "rev-1", None)).unwrap();
         let before = (prov.entity_count().unwrap(), prov.assertion_count().unwrap(), prov.source_record_count().unwrap());
 
         prov.transaction(|| remove_project(&prov, "ProjectA")).unwrap();
         assert_eq!(prov.entity_count().unwrap(), 0);
 
-        prov.transaction(|| import_pilot(&prov, release, &statements, &edges, "rev-1")).unwrap();
+        prov.transaction(|| import_pilot(&prov, release, &statements, &edges, "rev-1", None)).unwrap();
         let after = (prov.entity_count().unwrap(), prov.assertion_count().unwrap(), prov.source_record_count().unwrap());
         assert_eq!(before, after, "remove-then-reimport must reach the exact same counts");
+    }
+
+    // ── P8.5 adversarial fixtures（docs/P8_5_STATUS.md 項目6）──────────
+    //
+    // 7つ要求されたシナリオのうち、この場所で実際にテストできるのは
+    // 5つ——「宣言の出典パスが記録revisionの時点で存在しない」と
+    // 「revisionの不一致」の2つは、このコードベースに revision 追跡の
+    // 仕組み自体が無い（`PilotStatement`は`mathlibRev`/`gitCommit`を
+    // 持つが、Math-Graphはこの2つの非Mathlibプロジェクトに対して常に
+    // 空文字列しか記録しない——`docs/P8_5_STATUS.md`「Phase A」）ため、
+    // 自動テストとしては書けない。これらは実際にGitHubの生ソースを
+    // 取得して人手で確認した（同ドキュメント）——捏造したテストで
+    // カバレッジがあるように見せかけない。
+    #[test]
+    fn a_declaration_with_no_recorded_proof_edge_is_only_ever_labeled_a_candidate_never_confirmed_content_free() {
+        // シナリオ1: 「記録されたproof辺は無いが実際にはタクティク証明を
+        // 持つtypeclassインスタンス」。このコードベースは宣言の本文
+        // テキストを一切保持しない（P7の意図的なスコープ）ため、
+        // 「実際に証明を持つ」ことをRustのフィクスチャで表現する術は
+        // 無い——これこそがdocs/P8_5_STATUS.mdが見つけた限界そのもの。
+        // このテストが実際に検証できるのは、そういう宣言が
+        // `external_structural_candidate`という**その名前だけ**を得て、
+        // それ以上の(「証明が無い」「階層ノードだと確認された」という)
+        // 主張を一切運ばないこと——`.as_str()`が返す文字列そのものが
+        // 唯一の契約である。
+        let real_proof_lookalike = stmt("s1", "InverseLimit.instGroup", "FLT.Deformations", ExternalClassification::ExternalStructuralCandidate);
+        assert_eq!(real_proof_lookalike.classification.as_str(), "external_structural_candidate");
+        // The enum's entire string surface must never contain a stronger
+        // claim than "candidate" — no "verified"/"confirmed"/"proven"
+        // variant should ever exist, because the classifier has no way to
+        // earn that claim (no body/proof text is ever read).
+        for variant in [ExternalClassification::ExternalLiteralDependency, ExternalClassification::ExternalStructuralCandidate] {
+            let s = variant.as_str();
+            assert!(
+                !s.contains("verified") && !s.contains("confirmed") && !s.contains("proven"),
+                "classification string {s:?} would overclaim what this adapter can actually establish"
+            );
+        }
+    }
+
+    #[test]
+    fn a_trivial_delegation_and_a_substantive_proof_are_structurally_indistinguishable_to_this_classifier() {
+        // シナリオ2 vs シナリオ1: 「`inferInstanceAs`だけの1行」と
+        // 「実質的な証明を持つインスタンス」を、このアダプタが見分けられる
+        // という主張を一切していないことを、実際にimportして確認する——
+        // 両方とも`kind=instance`・出辺に`proof`型が無い、という同じ
+        // スキーマ信号しか受け取らないため、**必然的に**同じ分類になる。
+        let (prov, release) = store_with_release();
+        let statements = vec![
+            stmt("s1", "Trivial.delegation", "Test.Mod", ExternalClassification::ExternalStructuralCandidate),
+            stmt("s2", "Substantive.proof", "Test.Mod", ExternalClassification::ExternalStructuralCandidate),
+        ];
+        // どちらの宣言にもproof型の出辺を与えない——本文の実際の複雑さに
+        // 関わらず、Math-Graph自身がそう記録しなかった場合の挙動を見る。
+        prov.transaction(|| import_pilot(&prov, release, &statements, &[], "rev-1", None)).unwrap();
+
+        let s1 = prov.resolve_entity_ref("judgment:mathgraph:s1").unwrap();
+        let s2 = prov.resolve_entity_ref("judgment:mathgraph:s2").unwrap();
+        assert!(s1.is_some() && s2.is_some(), "both must import identically — the classifier cannot and does not try to tell them apart");
+    }
+
+    #[test]
+    fn a_declaration_with_a_named_proof_dependency_is_excluded_not_labeled_a_candidate() {
+        // シナリオ3: proof型の出辺を実際に持つ宣言は、新しい語彙のもとでも
+        // 依然として`excluded`（safe setに入らない）——リネームで
+        // この既存の区別自体が壊れていないことの確認。
+        let (prov, release) = store_with_release();
+        let statements = vec![
+            stmt("s1", "HasProof.thing", "Test.Mod", ExternalClassification::ExternalStructuralCandidate),
+            stmt("s2", "HasProof.dep", "Test.Mod", ExternalClassification::ExternalStructuralCandidate),
+        ];
+        let edges = vec![PilotEdge { src_id: "s1".into(), dep_id: "s2".into(), edge_type: "proof".into(), role: None, via_proj: false }];
+        let stats = prov.transaction(|| import_pilot(&prov, release, &statements, &edges, "rev-1", None)).unwrap();
+        // 宣言自体は(このアダプタの既存契約どおり)取り込まれる——安全か
+        // どうかの判定はPython前処理側の責務(`docs/P8_5_STATUS.md`の
+        // 分類スクリプト)。ここで確認するのは、"proof"型の辺自体は
+        // 決して取り込まれないという既存の保証が新語彙下でも健在なこと。
+        assert_eq!(stats.dependencies_excluded_proof_edge, 1);
+        assert_eq!(stats.dependencies_imported, 0);
+    }
+
+    #[test]
+    fn a_project_with_unrelated_tooling_directories_has_those_declarations_excluded_not_silently_imported() {
+        // シナリオ5: 実データそのもの——PrimeNumberTheoremAndの5,108件中
+        // 2,557件が`LeanCert`/`PrimeCert`/`Architect`という無関係な
+        // ディレクトリ配下だった(docs/P8_5_STATUS.md)。ここでは縮小版で
+        // 同じ形を再現する: "GoodProject"に属すると宣言されているが、
+        // 実際のfilePathは無関係なツールのものである宣言が、
+        // `expected_top_level_dir`を渡すと確実に弾かれることを確認する。
+        let (prov, release) = store_with_release();
+        let mut genuine = stmt("s1", "Genuine.lemma", "GoodProject.Mod", ExternalClassification::ExternalStructuralCandidate);
+        genuine.file_path = "GoodProject/Mod.lean".into();
+        let mut tooling = stmt("s2", "UnrelatedTool.instHelper", "SomeTool.Mod", ExternalClassification::ExternalStructuralCandidate);
+        tooling.file_path = "SomeUnrelatedTool/Mod.lean".into();
+        let statements = vec![genuine, tooling];
+
+        let stats =
+            prov.transaction(|| import_pilot(&prov, release, &statements, &[], "rev-1", Some("GoodProject"))).unwrap();
+
+        assert_eq!(stats.declarations_imported, 1, "only the genuinely-attributed declaration is imported");
+        assert_eq!(stats.declarations_project_attribution_unresolved, 1, "the tooling declaration is counted, not silently dropped");
+        assert!(prov.resolve_entity_ref("judgment:mathgraph:s1").unwrap().is_some());
+        assert!(
+            prov.resolve_entity_ref("judgment:mathgraph:s2").unwrap().is_none(),
+            "an unverified-attribution declaration must never enter the publishable subset"
+        );
+    }
+
+    #[test]
+    fn an_unknown_project_path_does_not_crash_edges_referencing_it_count_as_outside_scope() {
+        // シナリオ7: 弾かれた宣言を`srcId`に持つ辺が、`import_pilot`自身の
+        // 「src_idは常にスコープ内」という既存の不変条件チェックで
+        // クラッシュしない(誤ってscope_pilot.pyのバグとして`bail!`しない)
+        // ことを確認する——属性フィルタが有効なときは正常系として扱う。
+        let (prov, release) = store_with_release();
+        let mut unknown = stmt("s1", "Unknown.thing", "Weird.Mod", ExternalClassification::ExternalStructuralCandidate);
+        unknown.file_path = "TotallyUnknownPath/Mod.lean".into();
+        let mut genuine = stmt("s2", "Genuine.target", "GoodProject.Mod", ExternalClassification::ExternalStructuralCandidate);
+        genuine.file_path = "GoodProject/Mod.lean".into();
+        let statements = vec![unknown, genuine];
+        // s1 (filtered out) depends on s2 (kept) -- exercises the src-side filter path.
+        let edges = vec![PilotEdge { src_id: "s1".into(), dep_id: "s2".into(), edge_type: "sig".into(), role: None, via_proj: false }];
+
+        let stats =
+            prov.transaction(|| import_pilot(&prov, release, &statements, &edges, "rev-1", Some("GoodProject"))).unwrap();
+
+        assert_eq!(stats.declarations_project_attribution_unresolved, 1);
+        assert_eq!(stats.dependencies_imported, 0);
+        assert_eq!(stats.dependencies_outside_pilot_scope, 1, "the edge from the filtered declaration is counted, not an error");
     }
 }

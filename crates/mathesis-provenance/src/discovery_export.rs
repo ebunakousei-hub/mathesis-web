@@ -13,8 +13,8 @@
 //! - `mathesis-text`: Mathesis自身のテキスト抽出(`mathesis-importer`)
 //! - `math-graph-literal`: Math-Graphの実在Lean宣言どうしの依存
 //!   (`external_classification: external_literal_dependency`)
-//! - `math-graph-hierarchy`: Math-Graphの型クラス階層合成ノード
-//!   (`external_classification: external_typeclass_hierarchy`)
+//! - `math-graph-structural-candidate`: Math-Graphの型クラス階層合成ノード
+//!   (`external_classification: external_structural_candidate`)
 
 use crate::assertion_export::{entity_label_with_origin, evidence_details_for};
 use crate::model::ReleaseId;
@@ -30,12 +30,12 @@ pub enum DiscoverySource {
     MathesisChecker,
     MathesisText,
     MathGraphLiteral,
-    MathGraphHierarchy,
+    MathGraphStructuralCandidate,
 }
 
 impl DiscoverySource {
     pub fn is_external(self) -> bool {
-        matches!(self, Self::MathGraphLiteral | Self::MathGraphHierarchy)
+        matches!(self, Self::MathGraphLiteral | Self::MathGraphStructuralCandidate)
     }
 }
 
@@ -68,7 +68,7 @@ pub struct DiscoveryCounts {
     pub mathesis_checker: usize,
     pub mathesis_text: usize,
     pub math_graph_literal: usize,
-    pub math_graph_hierarchy: usize,
+    pub math_graph_structural_candidate: usize,
 }
 
 /// P8.2: 1プロジェクト（`repo_slug`）ぶんの外部辺カバレッジ集計——「連結先の
@@ -82,7 +82,7 @@ pub struct DiscoveryCounts {
 pub struct ProjectEdgeCount {
     pub repo_slug: String,
     pub literal_count: usize,
-    pub hierarchy_count: usize,
+    pub structural_candidate_count: usize,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -136,7 +136,7 @@ pub fn build_discovery_export(
 
         let source = match raw_ev.external_classification.as_deref() {
             Some("external_literal_dependency") => DiscoverySource::MathGraphLiteral,
-            Some("external_typeclass_hierarchy") => DiscoverySource::MathGraphHierarchy,
+            Some("external_structural_candidate") => DiscoverySource::MathGraphStructuralCandidate,
             _ if raw_ev.evidence_kind == crate::model::EvidenceKind::FormalExport => DiscoverySource::MathesisChecker,
             _ => DiscoverySource::MathesisText,
         };
@@ -145,7 +145,7 @@ pub fn build_discovery_export(
             DiscoverySource::MathesisChecker => counts.mathesis_checker += 1,
             DiscoverySource::MathesisText => counts.mathesis_text += 1,
             DiscoverySource::MathGraphLiteral => counts.math_graph_literal += 1,
-            DiscoverySource::MathGraphHierarchy => counts.math_graph_hierarchy += 1,
+            DiscoverySource::MathGraphStructuralCandidate => counts.math_graph_structural_candidate += 1,
         }
 
         // ライセンス表記は外部由来の行だけ埋める——Mathesis自身の証拠に
@@ -164,7 +164,7 @@ pub fn build_discovery_export(
             let entry = project_counts.entry(slug.clone()).or_insert_with(|| ProjectEdgeCount { repo_slug: slug.clone(), ..Default::default() });
             match source {
                 DiscoverySource::MathGraphLiteral => entry.literal_count += 1,
-                DiscoverySource::MathGraphHierarchy => entry.hierarchy_count += 1,
+                DiscoverySource::MathGraphStructuralCandidate => entry.structural_candidate_count += 1,
                 _ => {}
             }
         }
@@ -184,7 +184,7 @@ pub fn build_discovery_export(
         });
     }
 
-    let external_edge_count = counts.math_graph_literal + counts.math_graph_hierarchy;
+    let external_edge_count = counts.math_graph_literal + counts.math_graph_structural_candidate;
     let msc_classification_note = if external_edge_count == 0 {
         String::new()
     } else {
@@ -203,7 +203,7 @@ pub fn build_discovery_export(
     // exportを突き合わせて確認済みの非決定性バグの再発防止)。
     let mut by_project: Vec<ProjectEdgeCount> = project_counts.into_values().collect();
     by_project.sort_by(|a, b| {
-        let total = |p: &ProjectEdgeCount| p.literal_count + p.hierarchy_count;
+        let total = |p: &ProjectEdgeCount| p.literal_count + p.structural_candidate_count;
         total(b).cmp(&total(a)).then_with(|| a.repo_slug.cmp(&b.repo_slug))
     });
 
@@ -270,15 +270,15 @@ mod tests {
             stmt("a1", "A.one", "ProjectA", ExternalClassification::ExternalLiteralDependency),
             stmt("a2", "A.two", "ProjectA", ExternalClassification::ExternalLiteralDependency),
             stmt("a3", "A.three", "ProjectA", ExternalClassification::ExternalLiteralDependency),
-            stmt("b1", "B.one", "ProjectB", ExternalClassification::ExternalTypeclassHierarchy),
-            stmt("b2", "B.two", "ProjectB", ExternalClassification::ExternalTypeclassHierarchy),
+            stmt("b1", "B.one", "ProjectB", ExternalClassification::ExternalStructuralCandidate),
+            stmt("b2", "B.two", "ProjectB", ExternalClassification::ExternalStructuralCandidate),
         ];
         let edges = vec![
             PilotEdge { src_id: "a1".into(), dep_id: "a2".into(), edge_type: "sig".into(), role: None, via_proj: false },
             PilotEdge { src_id: "a2".into(), dep_id: "a3".into(), edge_type: "sig".into(), role: None, via_proj: false },
             PilotEdge { src_id: "b1".into(), dep_id: "b2".into(), edge_type: "def".into(), role: None, via_proj: false },
         ];
-        prov.transaction(|| math_graph_adapter::import_pilot(&prov, release, &statements, &edges, "rev-1")).unwrap();
+        prov.transaction(|| math_graph_adapter::import_pilot(&prov, release, &statements, &edges, "rev-1", None)).unwrap();
 
         let export = build_discovery_export(&prov, release, "t", "combined pilot").unwrap();
 
@@ -291,9 +291,9 @@ mod tests {
         assert_eq!(export.by_project.len(), 2);
         assert_eq!(export.by_project[0].repo_slug, "ProjectA");
         assert_eq!(export.by_project[0].literal_count, 2);
-        assert_eq!(export.by_project[0].hierarchy_count, 0);
+        assert_eq!(export.by_project[0].structural_candidate_count, 0);
         assert_eq!(export.by_project[1].repo_slug, "ProjectB");
-        assert_eq!(export.by_project[1].hierarchy_count, 1);
+        assert_eq!(export.by_project[1].structural_candidate_count, 1);
 
         assert!(export.msc_classification_note.contains("unavailable"));
         assert!(export.msc_classification_note.contains("3 external dependency edges"));

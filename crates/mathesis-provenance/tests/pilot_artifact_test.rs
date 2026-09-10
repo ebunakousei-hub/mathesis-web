@@ -38,7 +38,7 @@ fn the_whole_pilot_pipeline_runs_end_to_end_against_synthetic_fixtures() {
     assert_eq!(statements.len(), 4, "fixture should have 4 synthetic declarations");
     assert_eq!(edges.len(), 3, "fixture should have 3 synthetic edges");
 
-    let stats = math_graph_adapter::import_pilot(&prov, release, &statements, &edges, "fixture-revision-0000").unwrap();
+    let stats = math_graph_adapter::import_pilot(&prov, release, &statements, &edges, "fixture-revision-0000", None).unwrap();
 
     // 4 declarations, all pre-classified as safe (literal or
     // typeclass_hierarchy) — that's the contract this adapter has always
@@ -60,8 +60,9 @@ fn the_whole_pilot_pipeline_runs_end_to_end_against_synthetic_fixtures() {
                 scope_note: "fixture project (literal + hierarchy)".into(),
                 declarations_total: 3,
                 declarations_literal: 1,
-                declarations_typeclass_hierarchy: 2,
+                declarations_external_structural_candidate: 2,
                 declarations_excluded: 0,
+                declarations_project_attribution_unresolved: 0,
                 edges_imported: Some(1),
                 duplicate_groups: Some(0),
                 duplicate_extra_rows: Some(0),
@@ -73,8 +74,9 @@ fn the_whole_pilot_pipeline_runs_end_to_end_against_synthetic_fixtures() {
                 scope_note: "fixture project (hierarchy only, no literal possible)".into(),
                 declarations_total: 1,
                 declarations_literal: 0,
-                declarations_typeclass_hierarchy: 1,
+                declarations_external_structural_candidate: 1,
                 declarations_excluded: 0,
+                declarations_project_attribution_unresolved: 0,
                 edges_imported: Some(0),
                 duplicate_groups: Some(0),
                 duplicate_extra_rows: Some(0),
@@ -85,8 +87,9 @@ fn the_whole_pilot_pipeline_runs_end_to_end_against_synthetic_fixtures() {
         totals: ScopeTotals {
             declarations: 4,
             declarations_literal: 1,
-            declarations_typeclass_hierarchy: 3,
+            declarations_external_structural_candidate: 3,
             declarations_excluded: 0,
+            declarations_project_attribution_unresolved: 0,
             edges_imported: 1,
             duplicate_groups: 0,
             duplicate_extra_rows: 0,

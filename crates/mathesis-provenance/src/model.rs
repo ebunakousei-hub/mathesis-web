@@ -395,7 +395,7 @@ pub struct NewEvidence {
     pub dependency_origin: Option<String>,
     /// P7.4（`docs/P7_4_STATUS.md`）: 外部データセット由来のevidenceが
     /// どう分類されるか——`"external_literal_dependency"`(実在する
-    /// Lean宣言どうしの依存)か`"external_typeclass_hierarchy"`
+    /// Lean宣言どうしの依存)か`"external_structural_candidate"`
     /// (P7.3でスキーマ+内容証拠により特定した、型クラス階層上の
     /// 合成ノード)。`dependency_origin`(生の`edge_type`)とは別軸。
     /// Mathesis自身の証拠は常に`None`のまま。

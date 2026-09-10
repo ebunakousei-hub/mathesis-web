@@ -126,6 +126,11 @@ fn usage() -> ! {
          \x20 import-math-graph --db <path> --release <tag>\n\
          \x20                   --statements <pilot_statements.json> --edges <pilot_edges.json>\n\
          \x20                   --dataset-revision <content_hash_or_note>\n\
+         \x20                   [--expected-top-level-dir <dir>]\n\
+         \x20     P8.5（docs/P8_5_STATUS.md）: --expected-top-level-dirを渡すと、\n\
+         \x20     filePathがそのディレクトリで始まらない宣言を取り込み前に弾く\n\
+         \x20     （project_attribution_unresolvedとして数える）——省略時は\n\
+         \x20     このガードが走らない旨を警告する。\n\
          \x20     P7（docs/P7_STATUS.md）: uw-math-ai/math-graph（CC BY 4.0）のLeanGraphを、\n\
          \x20     scratch/math_graph_pilot/scope_pilot.pyが絞り込んだスコープ(P6.2の\n\
          \x20     2つのMathlib名前空間と同じ)ぶんだけ取り込む。多GBの生CSVはこの\n\
@@ -145,7 +150,7 @@ fn usage() -> ! {
          \x20     P7.4（docs/P7_4_STATUS.md）: 既存のdependencies.json/web-exportとは\n\
          \x20     完全に独立した、比較/発見モードUI専用の読み取りモデルを書き出す。\n\
          \x20     4種の出典(mathesis-checker/mathesis-text/math-graph-literal/\n\
-         \x20     math-graph-hierarchy)を明示的に分類し、subject/objectは\n\
+         \x20     math-graph-structural-candidate)を明示的に分類し、subject/objectは\n\
          \x20     entity_label_with_originの表示名で出す。本番のdependencies.json/\n\
          \x20     検索インデックス/既定の信頼グラフには一切書き込まない——追加専用の別ファイル。\n\
          \x20 export-pilot-manifest --db <path> --release <tag> --dataset-revision <hash>\n\
@@ -399,6 +404,12 @@ fn run_import_math_graph(args: &[String]) -> Result<()> {
     let statements_path = PathBuf::from(require_flag(args, "--statements")?);
     let edges_path = PathBuf::from(require_flag(args, "--edges")?);
     let dataset_revision = require_flag(args, "--dataset-revision")?.to_string();
+    // P8.5（docs/P8_5_STATUS.md）: optional so existing scripted invocations
+    // without it still work, but every new/regenerated call should pass it
+    // — this is what makes "unverified project attribution cannot enter
+    // the publishable subset" a structural guarantee instead of a Python
+    // pre-filtering habit that could silently be skipped.
+    let expected_top_level_dir = flag_value(args, "--expected-top-level-dir");
 
     let prov = ProvenanceStore::open(&db).with_context(|| format!("{db:?} を開けません"))?;
     let release = prov
@@ -414,15 +425,21 @@ fn run_import_math_graph(args: &[String]) -> Result<()> {
     )
     .with_context(|| format!("{edges_path:?} のパースに失敗"))?;
 
-    let stats = prov.transaction(|| math_graph_adapter::import_pilot(&prov, release.id, &statements, &edges, &dataset_revision))?;
+    let stats = prov.transaction(|| {
+        math_graph_adapter::import_pilot(&prov, release.id, &statements, &edges, &dataset_revision, expected_top_level_dir)
+    })?;
     println!(
-        "Math-Graph pilot: declarations +{} (skip {}), dependencies +{} (skip {}), {} dependency targets outside the pilot scope (ignored)",
+        "Math-Graph pilot: declarations +{} (skip {}), dependencies +{} (skip {}), {} dependency targets outside the pilot scope (ignored), {} project-attribution-unresolved (excluded)",
         stats.declarations_imported,
         stats.declarations_skipped_existing,
         stats.dependencies_imported,
         stats.dependencies_skipped_existing,
         stats.dependencies_outside_pilot_scope,
+        stats.declarations_project_attribution_unresolved,
     );
+    if expected_top_level_dir.is_none() {
+        eprintln!("warning: --expected-top-level-dir not given — project-attribution filtering did NOT run for this import");
+    }
     Ok(())
 }
 
@@ -460,12 +477,12 @@ fn run_export_discovery(args: &[String]) -> Result<()> {
     let export = build_discovery_export(&prov, release.id, &release_tag, &project_label)?;
     std::fs::write(&out, serde_json::to_string(&export)?).with_context(|| format!("{out:?} へ書き込めません"))?;
     println!(
-        "discovery export ({project_label}): {} edges — mathesis-checker {}, mathesis-text {}, math-graph-literal {}, math-graph-hierarchy {} -> {out:?}",
+        "discovery export ({project_label}): {} edges — mathesis-checker {}, mathesis-text {}, math-graph-literal {}, math-graph-structural-candidate {} -> {out:?}",
         export.edges.len(),
         export.counts.mathesis_checker,
         export.counts.mathesis_text,
         export.counts.math_graph_literal,
-        export.counts.math_graph_hierarchy,
+        export.counts.math_graph_structural_candidate,
     );
     Ok(())
 }
@@ -519,11 +536,12 @@ fn run_export_pilot_manifest(args: &[String]) -> Result<()> {
     )?;
     std::fs::write(&out, serde_json::to_string_pretty(&manifest)?).with_context(|| format!("{out:?} へ書き込めません"))?;
     println!(
-        "pilot artifact manifest: {} declarations ({} literal, {} typeclass-hierarchy, {} excluded), {} edges, {} db source records -> {out:?}",
+        "pilot artifact manifest: {} declarations ({} literal, {} external-structural-candidate, {} excluded, {} project-attribution-unresolved), {} edges, {} db source records -> {out:?}",
         manifest.totals.declarations,
         manifest.totals.declarations_literal,
-        manifest.totals.declarations_typeclass_hierarchy,
+        manifest.totals.declarations_external_structural_candidate,
         manifest.totals.declarations_excluded,
+        manifest.totals.declarations_project_attribution_unresolved,
         manifest.totals.edges_imported,
         manifest.source_record_count_in_db,
     );

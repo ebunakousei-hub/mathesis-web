@@ -2673,6 +2673,15 @@ table.demo-table code {
   color: #d3ab6f;
 }
 
+/* P8.5（docs/P8_5_STATUS.md）: the classification-semantics caveat for
+   external-structural-candidate edges — always visible, not hover-only. */
+.mgd-edge-caveat {
+  margin-top: 4px;
+  font-size: 11px;
+  font-style: italic;
+  color: var(--text-dim);
+}
+
 .mgd-edge-locator {
   margin-top: 4px;
   font-size: 11px;
@@ -2931,6 +2940,13 @@ table.demo-table code {
 .mgl-detail-meta {
   margin-top: 4px;
   font-size: 11px;
+  color: var(--text-dim);
+}
+
+.mgl-detail-caveat {
+  margin-top: 4px;
+  font-size: 11px;
+  font-style: italic;
   color: var(--text-dim);
 }
 

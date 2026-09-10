@@ -14,7 +14,7 @@
  * そのまま実装: 見た目は近い系統でも同じCSSクラスは一切使わず、破線の枠と
  * 由来バッジで常に外部データであることを示す。
  */
-import { SOURCE_BADGE_CLASS, SOURCE_LABEL } from "./mathGraphDiscovery";
+import { SOURCE_BADGE_CLASS, SOURCE_LABEL, STRUCTURAL_CANDIDATE_CAVEAT } from "./mathGraphDiscovery";
 import { buildNeighborhood, type MathGraphNeighborNode, type MathGraphNeighborhood } from "./mathGraphLineage";
 import type { DiscoveryEdge } from "./types";
 import { escapeHtml } from "./util";
@@ -209,6 +209,7 @@ function renderDetail(edge: DiscoveryEdge): HTMLElement {
       ${edge.edgeType ? ` · edge type: ${escapeHtml(edge.edgeType)}` : ""}
       ${edge.license ? ` · license: ${escapeHtml(edge.license)}` : ""}
     </div>
+    ${edge.source === "math-graph-structural-candidate" ? `<div class="mgl-detail-caveat">${escapeHtml(STRUCTURAL_CANDIDATE_CAVEAT)}</div>` : ""}
     ${edge.locator ? `<div class="mgl-detail-locator">${escapeHtml(edge.locator)}</div>` : ""}
   `;
   return box;

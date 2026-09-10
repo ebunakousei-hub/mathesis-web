@@ -332,6 +332,48 @@ because it's exercised now.
 not item 10's fuller per-source/per-record-type breakdown): `mathesis-
 provenance stats` now prints DB-wide classification totals by status.
 
+## `ExternalClassification::ExternalStructuralCandidate` — four concepts that must not be conflated
+
+Added P8.5 (`docs/P8_5_STATUS.md`), replacing the earlier P7.3/P7.4/P8.1
+name `ExternalTypeclassHierarchy`. A spot-check against the real, current
+Lean source of sampled `typeclass_hierarchy`-classified declarations
+(FLT's `InverseLimit.instGroup`, pfr's `IsMarkovKernel (deleteRight κ)`)
+found substantive multi-step tactic proofs on declarations carrying that
+label — direct evidence that the old name asserted more than the
+underlying rule (`kind ∈ {inst, instance}` and zero Math-Graph-recorded
+`proof`-type outgoing edges) actually establishes. These four statements
+about a Math-Graph declaration are genuinely different claims, and this
+codebase's classifier only ever proves the first one:
+
+| Concept | What it means | Does `ExternalStructuralCandidate` prove it? |
+| --- | --- | --- |
+| **Proof edge absent** | Math-Graph's own dependency extraction recorded zero outgoing `edge_type: proof` edges for this declaration | **Yes** — this is the literal, mechanical condition the classifier checks. |
+| **Proof absent** | The declaration's Lean source contains no proof content at all | **No.** A tactic proof (`by simp`, `by fun_prop`, `by rw [...]; apply ...`) that doesn't cite another declaration *by name* as an explicit term-level dependency apparently generates no recorded `proof`-type edge in Math-Graph's extraction — so "zero proof edges recorded" and "no proof was written" are not the same fact, confirmed by reading real source (`docs/P8_5_STATUS.md`). |
+| **Hierarchy position** | The declaration structurally represents a typeclass-hierarchy composition (e.g. `instance : Group (InverseLimit G f) := ...` combining existing instances) | **No, not confirmed.** Most sampled declarations do look like this — but it's a hypothesis the schema signal is *consistent with*, not something the classifier independently verifies against the declaration's actual role in a hierarchy. |
+| **Unresolved external semantics** | The available data (schema fields + recorded edge types only, no proof term, no body) cannot establish what kind of content this really is | This is the **honest fallback reading** — `ExternalStructuralCandidate` should be understood as "a candidate worth investigating, not yet resolved," not as a settled classification. |
+
+**Practical consequence**: any UI, export, or document describing these
+records must carry the caveat, not just the renamed label — a shorter
+name alone doesn't fix an overclaiming reader. The mandated wording
+(`web/src/mathGraphDiscovery.ts::STRUCTURAL_CANDIDATE_CAVEAT`, shown
+wherever the badge appears, not hover-only): *"Math-Graph contains no
+recorded proof-edge for this record. This does not establish that the
+declaration has no proof or that it is merely a typeclass hierarchy
+node."*
+
+**A second, unrelated finding from the same pass**: full per-project
+`filePath` auditing (not just the classified subset) found that 92 of
+PrimeNumberTheoremAnd's 109 already-imported `ExternalStructuralCandidate`
+declarations, and 9 of FLT's 498, live under top-level directories
+(`LeanCert/`, `PrimeCert/`, `Architect/`; a bare `Mathlib/` not part of
+FLT's own repo) that don't belong to the attributed project at all. This
+is a **project-attribution** question, orthogonal to the four concepts
+above — a declaration can have correct proof-edge-absence data while
+being attributed to the wrong project entirely. See
+`docs/P8_5_STATUS.md` for the full validation report and the new
+`declarations_project_attribution_unresolved` exclusion bucket
+(`crates/mathesis-provenance/src/pilot_artifact.rs::ProjectReport`).
+
 ## Known limitations (not fixed in this increment — deliberately deferred)
 
 A second external review (2026-09-05) raised several points that are valid

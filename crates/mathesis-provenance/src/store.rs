@@ -189,7 +189,7 @@ impl ProvenanceStore {
 
     /// P7.4（`docs/P7_4_STATUS.md`）: `ensure_p6_1_columns`と同じパターン。
     /// 「このevidenceが外部データセット由来として、どう分類されるか」
-    /// (`external_literal_dependency`/`external_typeclass_hierarchy`)——
+    /// (`external_literal_dependency`/`external_structural_candidate`)——
     /// `dependency_origin`(生のedge_type: sig/proof/def/...)とは別軸。
     /// Mathesis自身の証拠は常に`NULL`のまま。
     fn ensure_p7_4_columns(conn: &Connection) -> Result<()> {

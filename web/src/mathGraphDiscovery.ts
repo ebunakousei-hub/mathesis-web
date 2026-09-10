@@ -8,7 +8,7 @@
  * 押すまでMath-Graph由来の辺は一切表示しない。
  */
 import { renderMathGraphLineage, type MathGraphLineageState } from "./mathGraphLineageView";
-import type { DiscoveryEdge, DiscoveryExport, DiscoverySource } from "./types";
+import type { DiscoveryCounts, DiscoveryEdge, DiscoveryExport, DiscoverySource } from "./types";
 import { escapeHtml, reportProvenanceIssue } from "./util";
 
 /** P8.3: exported so `mathGraphLineageView.ts` can label edges the same way,
@@ -17,18 +17,50 @@ export const SOURCE_LABEL: Record<DiscoverySource, string> = {
   "mathesis-checker": "Mathesis checker-derived (own Lean build)",
   "mathesis-text": "Mathesis text-extracted",
   "math-graph-literal": "Math-Graph literal dependency (external)",
-  "math-graph-hierarchy": "Math-Graph typeclass-hierarchy discovery (external)",
+  "math-graph-structural-candidate": "External structural candidate",
 };
+
+/**
+ * P8.5（`docs/P8_5_STATUS.md`）: the mandatory caveat for
+ * `math-graph-structural-candidate` — renamed from the old
+ * "typeclass-hierarchy discovery" label after a spot-check against real
+ * Lean source found declarations with substantive tactic proofs carrying
+ * this classification anyway (FLT's `InverseLimit.instGroup`, pfr's
+ * `IsMarkovKernel (deleteRight κ)`). The label alone (even the new,
+ * more conservative one) doesn't carry this nuance on its own, so the
+ * full sentence is shown wherever the badge appears, not just on hover.
+ */
+export const STRUCTURAL_CANDIDATE_CAVEAT =
+  "Math-Graph contains no recorded proof-edge for this record. This does not establish that the declaration has no proof or that it is merely a typeclass hierarchy node.";
 
 export const SOURCE_BADGE_CLASS: Record<DiscoverySource, string> = {
   "mathesis-checker": "mgd-badge-checker",
   "mathesis-text": "mgd-badge-text",
   "math-graph-literal": "mgd-badge-literal",
-  "math-graph-hierarchy": "mgd-badge-hierarchy",
+  "math-graph-structural-candidate": "mgd-badge-hierarchy",
 };
 
 export function isExternal(source: DiscoverySource): boolean {
-  return source === "math-graph-literal" || source === "math-graph-hierarchy";
+  return source === "math-graph-literal" || source === "math-graph-structural-candidate";
+}
+
+/**
+ * P8.5: `DiscoveryCounts.mathGraphHierarchy` was renamed to
+ * `mathGraphStructuralCandidate` — but the two already-committed,
+ * already-public `math-graph-discovery-project{2,3}.json` files (P7.4,
+ * never regenerated — see docs/P8_2_STATUS.md's own note on why their
+ * original scoping revision can't be reconstructed) still have the OLD
+ * field name. Reading the new field directly on those objects gives
+ * `undefined` (confirmed live: rendered as the literal string
+ * "undefined Math-Graph structural candidate" in the browser before this
+ * fix). Falls back to the old field name, then to 0 — never fabricates a
+ * count, just tolerates the older shape the same way `byProject`/
+ * `mscClassificationNote` already do.
+ */
+function structuralCandidateCount(counts: DiscoveryCounts): number {
+  if (typeof counts.mathGraphStructuralCandidate === "number") return counts.mathGraphStructuralCandidate;
+  const legacy = (counts as unknown as Record<string, unknown>).mathGraphHierarchy;
+  return typeof legacy === "number" ? legacy : 0;
 }
 
 /** 一度に描画する辺の件数——「paginated TheoremGraph results」要求
@@ -173,7 +205,7 @@ export class MathGraphDiscoveryPanel {
       <span class="mgd-count-chip ${SOURCE_BADGE_CLASS["mathesis-checker"]}">${project.counts.mathesisChecker} checker-derived</span>
       <span class="mgd-count-chip ${SOURCE_BADGE_CLASS["mathesis-text"]}">${project.counts.mathesisText} text-extracted</span>
       <span class="mgd-count-chip ${SOURCE_BADGE_CLASS["math-graph-literal"]}">${project.counts.mathGraphLiteral} Math-Graph literal</span>
-      <span class="mgd-count-chip ${SOURCE_BADGE_CLASS["math-graph-hierarchy"]}">${project.counts.mathGraphHierarchy} Math-Graph hierarchy</span>
+      <span class="mgd-count-chip ${SOURCE_BADGE_CLASS["math-graph-structural-candidate"]}">${structuralCandidateCount(project.counts)} Math-Graph structural candidate</span>
     `;
     section.appendChild(counts);
 
@@ -188,7 +220,7 @@ export class MathGraphDiscoveryPanel {
       byProjectBox.innerHTML = project.byProject
         .map(
           (p) =>
-            `<span class="mgd-count-chip mgd-badge-project">${escapeHtml(p.repoSlug)}: ${p.literalCount} literal, ${p.hierarchyCount} hierarchy</span>`,
+            `<span class="mgd-count-chip mgd-badge-project">${escapeHtml(p.repoSlug)}: ${p.literalCount} literal, ${p.structuralCandidateCount} structural candidate</span>`,
         )
         .join(" ");
       section.appendChild(byProjectBox);
@@ -356,6 +388,16 @@ export class MathGraphDiscoveryPanel {
     attribution.className = "mgd-edge-attribution";
     attribution.textContent = `External dataset: Math-Graph${edge.license ? ` — ${edge.license}` : ""} — not independently verified by Mathesis.`;
     li.appendChild(attribution);
+
+    // P8.5: the classification-semantics caveat is shown for every
+    // structural-candidate edge, not just on hover — see
+    // STRUCTURAL_CANDIDATE_CAVEAT's own doc comment for why.
+    if (edge.source === "math-graph-structural-candidate") {
+      const caveat = document.createElement("div");
+      caveat.className = "mgd-edge-caveat";
+      caveat.textContent = STRUCTURAL_CANDIDATE_CAVEAT;
+      li.appendChild(caveat);
+    }
 
     if (edge.locator) {
       const locator = document.createElement("div");

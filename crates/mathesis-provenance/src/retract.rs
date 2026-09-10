@@ -78,7 +78,7 @@ mod tests {
             lean_toolchain: None,
             mathlib_rev: None,
             git_commit: None,
-            classification: ExternalClassification::ExternalTypeclassHierarchy,
+            classification: ExternalClassification::ExternalStructuralCandidate,
         }
     }
 
@@ -90,7 +90,7 @@ mod tests {
             .unwrap();
         let statements = vec![stmt("s1", "Foo.one"), stmt("s2", "Foo.two")];
         let edges = vec![PilotEdge { src_id: "s1".into(), dep_id: "s2".into(), edge_type: "def".into(), role: None, via_proj: false }];
-        prov.transaction(|| math_graph_adapter::import_pilot(&prov, release, &statements, &edges, "rev")).unwrap();
+        prov.transaction(|| math_graph_adapter::import_pilot(&prov, release, &statements, &edges, "rev", None)).unwrap();
 
         assert_eq!(prov.entity_count().unwrap(), 2);
         assert_eq!(prov.assertion_count().unwrap(), 1);
@@ -117,7 +117,7 @@ mod tests {
             .get_or_insert_release(&NewRelease { tag: "t".into(), git_commit: None, generated_at_unix: 0, notes: None })
             .unwrap();
         let statements = vec![stmt("s1", "Foo.lonely")];
-        prov.transaction(|| math_graph_adapter::import_pilot(&prov, release, &statements, &[], "rev")).unwrap();
+        prov.transaction(|| math_graph_adapter::import_pilot(&prov, release, &statements, &[], "rev", None)).unwrap();
 
         let entity = prov.resolve_entity_ref("judgment:mathgraph:s1").unwrap().unwrap();
         let stats = prov.transaction(|| retract_entity(&prov, entity)).unwrap();

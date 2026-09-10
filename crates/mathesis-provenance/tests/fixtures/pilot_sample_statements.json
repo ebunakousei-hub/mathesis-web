@@ -10,7 +10,7 @@
     "leanToolchain": "v4.2.9",
     "mathlibRev": null,
     "gitCommit": null,
-    "classification": "external_typeclass_hierarchy"
+    "classification": "external_structural_candidate"
   },
   {
     "statementId": "sample-0002",
@@ -23,7 +23,7 @@
     "leanToolchain": "v4.2.9",
     "mathlibRev": null,
     "gitCommit": null,
-    "classification": "external_typeclass_hierarchy"
+    "classification": "external_structural_candidate"
   },
   {
     "statementId": "sample-0003",
@@ -49,6 +49,6 @@
     "leanToolchain": null,
     "mathlibRev": null,
     "gitCommit": null,
-    "classification": "external_typeclass_hierarchy"
+    "classification": "external_structural_candidate"
   }
 ]

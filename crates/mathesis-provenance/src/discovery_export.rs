@@ -221,8 +221,10 @@ pub fn build_discovery_export(
 /// 宣言自身のsource_record（`math_graph_adapter::import_statement`が
 /// `reproducibility_json`込みで作る）から引く。Mathesis自身の宣言や、
 /// 何らかの理由でsource_recordを持たないentityでは`None`——無い情報を
-/// 捏造しない。
-fn repo_slug_for_entity(prov: &ProvenanceStore, entity_id: Option<crate::model::EntityId>) -> anyhow::Result<Option<String>> {
+/// 捏造しない。P8.4（`docs/P8_4_STATUS.md`）: `math_graph_adapter::remove_project`
+/// も同じ抽出が要るため`pub(crate)`にして共有する（2つ目のJSON解析を
+/// 書かない）。
+pub(crate) fn repo_slug_for_entity(prov: &ProvenanceStore, entity_id: Option<crate::model::EntityId>) -> anyhow::Result<Option<String>> {
     let Some(entity_id) = entity_id else { return Ok(None) };
     let Some(entity) = prov.try_get_entity(entity_id)? else { return Ok(None) };
     let Some(source_record_id) = entity.source_record_id else { return Ok(None) };

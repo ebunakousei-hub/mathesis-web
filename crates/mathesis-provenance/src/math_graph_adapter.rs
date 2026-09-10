@@ -315,6 +315,47 @@ pub fn import_pilot(
     Ok(stats)
 }
 
+/// P8.4（`docs/P8_4_STATUS.md`、ディレクティブ Stage 5 "Each project should
+/// be independently importable and removable"）: `repo_slug`ぶんの宣言・辺を
+/// すべて取り消す。`import_pilot`は既に冪等（同じ`(statements, edges)`を
+/// 何度渡しても増えない）で「independently importable」の側は元から
+/// 満たしていた——ここで足すのは「removable」の側。
+///
+/// Math-Graphの辺は必ず同一プロジェクト内に閉じる（`scope_pilot_*.py`が
+/// `src_id`のスコープでしか辺を残さない設計、`docs/P8_1_STATUS.md`の
+/// "dependency targets outside scope"参照）ため、対象entityの集合だけを
+/// 集めて`retract::retract_entity`を1件ずつ呼べば、他プロジェクトの宣言・
+/// 辺を一切巻き込まずに完結する——複数プロジェクトが混在するDB
+/// （P8.1以降の`scratch/p8_1/pilot_provenance.db`）でもこの前提は崩れない。
+pub fn remove_project(prov: &ProvenanceStore, repo_slug: &str) -> anyhow::Result<RemoveProjectStats> {
+    let candidate_ids = prov.entity_ids_with_ref_prefix("judgment:mathgraph:")?;
+    let mut target_ids = Vec::new();
+    for id in candidate_ids {
+        if crate::discovery_export::repo_slug_for_entity(prov, Some(id))?.as_deref() == Some(repo_slug) {
+            target_ids.push(id);
+        }
+    }
+
+    let mut stats = RemoveProjectStats { declarations_removed: 0, dependencies_removed: 0 };
+    for id in target_ids {
+        let r = crate::retract::retract_entity(prov, id)?;
+        stats.declarations_removed += 1;
+        stats.dependencies_removed += r.assertions_removed;
+    }
+    Ok(stats)
+}
+
+#[derive(Debug, Default, Clone, Copy)]
+pub struct RemoveProjectStats {
+    pub declarations_removed: usize,
+    /// 各entityは`target_ids`の中でちょうど1回だけ`retract_entity`に渡される
+    /// ため、あるentityの取り消しで既に削除された辺（assertion）は、もう
+    /// 片方の端点のentityを取り消すときには`assertion_ids_touching_entity`
+    /// にもう出てこない——重複カウントはしない。行き着く総和は実際に
+    /// 削除された辺の総数と一致する。
+    pub dependencies_removed: usize,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -342,6 +383,13 @@ mod tests {
             git_commit: None,
             classification,
         }
+    }
+
+    /// P8.4: like `stmt`, but with a caller-chosen `repo_slug` — `stmt` itself
+    /// hardcodes `"Mathlib_v429"`, which the `remove_project` tests below
+    /// need to vary (that's the entire property under test).
+    fn stmt_in_project(id: &str, decl_name: &str, repo_slug: &str, classification: ExternalClassification) -> PilotStatement {
+        PilotStatement { repo_slug: repo_slug.into(), ..stmt(id, decl_name, "Mod", classification) }
     }
 
     #[test]
@@ -447,5 +495,71 @@ mod tests {
         assert_eq!(second.dependencies_imported, 0);
         assert_eq!(second.dependencies_skipped_existing, 1);
         assert_eq!(prov.assertion_count().unwrap(), 1);
+    }
+
+    /// P8.4（`docs/P8_4_STATUS.md`）: the actual "independently importable and
+    /// removable" contract — two projects in the same DB, remove one by
+    /// repo_slug, the other must be completely untouched (not just "still
+    /// present" but byte-identical entity/assertion/source_record counts).
+    #[test]
+    fn remove_project_removes_only_the_named_project_and_leaves_the_other_intact() {
+        let (prov, release) = store_with_release();
+        let statements = vec![
+            stmt_in_project("a1", "ProjA.one", "ProjectA", ExternalClassification::ExternalTypeclassHierarchy),
+            stmt_in_project("a2", "ProjA.two", "ProjectA", ExternalClassification::ExternalTypeclassHierarchy),
+            stmt_in_project("b1", "ProjB.one", "ProjectB", ExternalClassification::ExternalTypeclassHierarchy),
+            stmt_in_project("b2", "ProjB.two", "ProjectB", ExternalClassification::ExternalTypeclassHierarchy),
+        ];
+        let edges = vec![
+            PilotEdge { src_id: "a1".into(), dep_id: "a2".into(), edge_type: "def".into(), role: None, via_proj: false },
+            PilotEdge { src_id: "b1".into(), dep_id: "b2".into(), edge_type: "def".into(), role: None, via_proj: false },
+        ];
+        prov.transaction(|| import_pilot(&prov, release, &statements, &edges, "rev-1")).unwrap();
+        assert_eq!(prov.entity_count().unwrap(), 4);
+        assert_eq!(prov.assertion_count().unwrap(), 2);
+
+        let stats = prov.transaction(|| remove_project(&prov, "ProjectA")).unwrap();
+        assert_eq!(stats.declarations_removed, 2);
+        assert_eq!(stats.dependencies_removed, 1);
+
+        assert_eq!(prov.entity_count().unwrap(), 2, "ProjectB's 2 declarations must remain");
+        assert_eq!(prov.assertion_count().unwrap(), 1, "ProjectB's 1 edge must remain");
+        assert!(prov.resolve_entity_ref("judgment:mathgraph:a1").unwrap().is_none());
+        assert!(prov.resolve_entity_ref("judgment:mathgraph:a2").unwrap().is_none());
+        assert!(prov.resolve_entity_ref("judgment:mathgraph:b1").unwrap().is_some(), "ProjectB must be untouched");
+        assert!(prov.resolve_entity_ref("judgment:mathgraph:b2").unwrap().is_some(), "ProjectB must be untouched");
+    }
+
+    #[test]
+    fn remove_project_reports_zero_for_an_unknown_repo_slug_without_touching_anything() {
+        let (prov, release) = store_with_release();
+        let statements = vec![stmt_in_project("a1", "ProjA.one", "ProjectA", ExternalClassification::ExternalTypeclassHierarchy)];
+        prov.transaction(|| import_pilot(&prov, release, &statements, &[], "rev-1")).unwrap();
+
+        let stats = prov.transaction(|| remove_project(&prov, "NoSuchProject")).unwrap();
+        assert_eq!(stats.declarations_removed, 0);
+        assert_eq!(prov.entity_count().unwrap(), 1, "the real project must be untouched by a no-match removal");
+    }
+
+    /// A project can be removed and then re-imported to reach the exact same
+    /// state — the concrete guarantee "removable" needs to be worth anything
+    /// (otherwise "removable" could mean "removable but not re-addable").
+    #[test]
+    fn a_removed_project_can_be_reimported_to_identical_counts() {
+        let (prov, release) = store_with_release();
+        let statements = vec![
+            stmt_in_project("a1", "ProjA.one", "ProjectA", ExternalClassification::ExternalTypeclassHierarchy),
+            stmt_in_project("a2", "ProjA.two", "ProjectA", ExternalClassification::ExternalTypeclassHierarchy),
+        ];
+        let edges = vec![PilotEdge { src_id: "a1".into(), dep_id: "a2".into(), edge_type: "def".into(), role: None, via_proj: false }];
+        prov.transaction(|| import_pilot(&prov, release, &statements, &edges, "rev-1")).unwrap();
+        let before = (prov.entity_count().unwrap(), prov.assertion_count().unwrap(), prov.source_record_count().unwrap());
+
+        prov.transaction(|| remove_project(&prov, "ProjectA")).unwrap();
+        assert_eq!(prov.entity_count().unwrap(), 0);
+
+        prov.transaction(|| import_pilot(&prov, release, &statements, &edges, "rev-1")).unwrap();
+        let after = (prov.entity_count().unwrap(), prov.assertion_count().unwrap(), prov.source_record_count().unwrap());
+        assert_eq!(before, after, "remove-then-reimport must reach the exact same counts");
     }
 }

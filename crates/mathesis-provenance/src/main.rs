@@ -156,7 +156,13 @@ fn usage() -> ! {
          \x20     URL/リビジョン・取得時刻・生ソースCSVのハッシュ・スキーマ/アダプタ版・\n\
          \x20     ライセンス・プロジェクト別内訳・DB内の実件数・未解決/重複件数・MSC分類\n\
          \x20     状態別件数（Lean宣言は分類対象外なので全件unavailableと正直に記録）・\n\
-         \x20     読み取りモデル(export-discoveryの出力)のハッシュを1つにまとめる。"
+         \x20     読み取りモデル(export-discoveryの出力)のハッシュを1つにまとめる。\n\
+         \x20 remove-math-graph-project --db <path> --repo-slug <slug>\n\
+         \x20     P8.4（docs/P8_4_STATUS.md、ディレクティブ Stage 5 \"independently\n\
+         \x20     importable and removable\"）: 指定したrepoSlugの宣言・依存辺を\n\
+         \x20     evidence→review_decisions→relation_assertions→entity_refs→\n\
+         \x20     entities→source_recordsの順に完全に取り消す。他プロジェクトの行は\n\
+         \x20     一切触れない（Math-Graphの辺は常に同一プロジェクト内に閉じるため）。"
     );
     std::process::exit(1);
 }
@@ -189,6 +195,7 @@ fn main() -> Result<()> {
         Some("import-math-graph") => run_import_math_graph(&args[2..]),
         Some("export-discovery") => run_export_discovery(&args[2..]),
         Some("export-pilot-manifest") => run_export_pilot_manifest(&args[2..]),
+        Some("remove-math-graph-project") => run_remove_math_graph_project(&args[2..]),
         _ => usage(),
     }
 }
@@ -416,6 +423,23 @@ fn run_import_math_graph(args: &[String]) -> Result<()> {
         stats.dependencies_skipped_existing,
         stats.dependencies_outside_pilot_scope,
     );
+    Ok(())
+}
+
+/// P8.4（`docs/P8_4_STATUS.md`）: `import-math-graph`で取り込んだ1プロジェクト
+/// ぶんを完全に取り消す——`math_graph_adapter::remove_project`の薄いCLIラッパー。
+/// 呼び出し全体を1トランザクションにする(`retract_entity`を複数回呼ぶが、
+/// 途中で失敗したら全部ロールバックし、中途半端な取り消し状態を残さない)。
+fn run_remove_math_graph_project(args: &[String]) -> Result<()> {
+    let db = PathBuf::from(require_flag(args, "--db")?);
+    let repo_slug = require_flag(args, "--repo-slug")?.to_string();
+
+    let prov = ProvenanceStore::open(&db).with_context(|| format!("{db:?} を開けません"))?;
+    let stats = prov.transaction(|| math_graph_adapter::remove_project(&prov, &repo_slug))?;
+    println!("Math-Graph project '{repo_slug}' removed: {} declarations, {} dependencies", stats.declarations_removed, stats.dependencies_removed);
+    if stats.declarations_removed == 0 {
+        println!("warning: no declarations matched repo_slug '{repo_slug}' — nothing was removed. Check spelling/case.");
+    }
     Ok(())
 }
 

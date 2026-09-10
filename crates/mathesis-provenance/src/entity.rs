@@ -217,6 +217,35 @@ impl ProvenanceStore {
         Ok(rows)
     }
 
+    /// P8.4（`docs/P8_4_STATUS.md`）: `ref_string`の前置きで絞り込んだ
+    /// entity一覧——`math_graph_adapter::remove_project`が
+    /// `"judgment:mathgraph:"`で使う。ワイルドカード文字（`%`/`_`）を含む
+    /// `prefix`を渡すと`LIKE`の意味が壊れるが、呼び出し元は固定の名前空間
+    /// 接頭辞しか渡さないため実害はない。
+    pub fn entity_ids_with_ref_prefix(&self, prefix: &str) -> Result<Vec<EntityId>> {
+        let mut stmt = self.conn.prepare_cached(
+            "SELECT DISTINCT entity_id FROM entity_refs WHERE ref_string LIKE ?1 || '%' ORDER BY entity_id",
+        )?;
+        let rows = stmt.query_map(params![prefix], |r| r.get::<_, i64>(0).map(EntityId))?.collect::<rusqlite::Result<Vec<_>>>()?;
+        Ok(rows)
+    }
+
+    /// P8.4: `retract.rs::retract_entity`用。先に`assertion_ids_touching_entity`
+    /// が0件になっていることを呼び出し側が保証する（`entity_refs`にFKは無いが、
+    /// 意味的な後始末——参照を残したまま実体だけ消すと`resolve_entity_ref`が
+    /// 存在しないentity_idを返すようになる）。
+    pub fn delete_entity_refs_for_entity(&self, id: EntityId) -> Result<usize> {
+        self.conn.prepare_cached("DELETE FROM entity_refs WHERE entity_id = ?1")?.execute(params![id.0])
+    }
+
+    /// P8.4: このリポジトリで最初のentity削除メソッド——呼び出し順は
+    /// `retract.rs::retract_entity`参照（evidence→review→assertion→
+    /// entity_refs→entity→source_record）。
+    pub fn delete_entity(&self, id: EntityId) -> Result<()> {
+        self.conn.prepare_cached("DELETE FROM entities WHERE id = ?1")?.execute(params![id.0])?;
+        Ok(())
+    }
+
     /// このエンティティが知られているすべての呼び方（conceptなら代表+alias群）。
     pub fn refs_for_entity(&self, id: EntityId) -> Result<Vec<String>> {
         let mut stmt = self.conn.prepare_cached("SELECT ref_string FROM entity_refs WHERE entity_id = ?1 ORDER BY ref_string")?;

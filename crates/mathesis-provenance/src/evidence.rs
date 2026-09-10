@@ -46,6 +46,15 @@ impl ProvenanceStore {
         self.conn.query_row("SELECT COUNT(*) FROM evidence", [], |r| r.get(0))
     }
 
+    /// P8.4（`docs/P8_4_STATUS.md`）: このリポジトリで最初の削除系メソッド
+    /// ——「independently importable and removable」（ディレクティブ
+    /// Stage 5）を実装するのに要る。`retract.rs::retract_entity`から、
+    /// assertion本体を消す前に必ず先に呼ばれる（`evidence.assertion_id`の
+    /// FK制約、`PRAGMA foreign_keys = ON`）。
+    pub fn delete_evidence_for_assertion(&self, assertion: AssertionId) -> Result<usize> {
+        self.conn.prepare_cached("DELETE FROM evidence WHERE assertion_id = ?1")?.execute(params![assertion.0])
+    }
+
     /// assertionあたりのevidence行数のヒストグラム（`stats`サブコマンド用、
     /// 「ConfirmedはGroundedの2倍の証拠を持つはず」の検証に使う）。
     pub fn evidence_count_histogram(&self) -> Result<Vec<(i64, i64)>> {

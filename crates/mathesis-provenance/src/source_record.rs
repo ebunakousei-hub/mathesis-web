@@ -82,6 +82,16 @@ impl ProvenanceStore {
         self.conn.query_row("SELECT COUNT(*) FROM source_records", [], |r| r.get(0))
     }
 
+    /// P8.4（`docs/P8_4_STATUS.md`）: `retract.rs::retract_entity`用。
+    /// `PRAGMA foreign_keys = ON`のため、他のentity/evidence行がまだこの
+    /// source_recordを参照していれば呼び出し側の期待どおり失敗する——
+    /// 「本当にもう誰も要らないか」を`retract_entity`側で別途調べる代わりに、
+    /// DB自身の制約にその判定を委ねる。
+    pub fn delete_source_record(&self, id: SourceRecordId) -> Result<()> {
+        self.conn.prepare_cached("DELETE FROM source_records WHERE id = ?1")?.execute(params![id.0])?;
+        Ok(())
+    }
+
     fn source_record_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<SourceRecord> {
         Ok(SourceRecord {
             id: SourceRecordId(row.get(0)?),

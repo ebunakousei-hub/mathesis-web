@@ -54,6 +54,18 @@ impl ProvenanceStore {
         self.conn.query_row("SELECT COUNT(*) FROM review_decisions", [], |r| r.get(0))
     }
 
+    /// P8.4（`docs/P8_4_STATUS.md`）: `retract.rs::retract_entity`用。レビューは
+    /// 本来「追記専用ログ」（このファイル冒頭のコメント）だが、それは
+    /// **assertionが存続する**前提の話——`retract_entity`はassertion自体を
+    /// 消す（`PRAGMA foreign_keys = ON`のFK制約上、先に消さないとassertionの
+    /// DELETEが失敗する）。Math-Graphパイロットのassertionは一度も
+    /// レビューされていない（`review_decision_count`は本パイロットDBで常に0）
+    /// ため実質的には無害だが、0件だからと省略せず、0件でない場合にも
+    /// 正しく動く形で実装する。
+    pub fn delete_review_decisions_for_assertion(&self, assertion: AssertionId) -> Result<usize> {
+        self.conn.prepare_cached("DELETE FROM review_decisions WHERE assertion_id = ?1")?.execute(params![assertion.0])
+    }
+
     fn review_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<ReviewDecision> {
         let decision_str: String = row.get(2)?;
         Ok(ReviewDecision {

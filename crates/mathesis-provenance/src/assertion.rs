@@ -1,5 +1,5 @@
 use crate::error::{ProvenanceResult, ValidationError};
-use crate::model::{AssertionId, EpistemicState, NewRelationAssertion, RelationAssertion, RelationKind, ReleaseId};
+use crate::model::{AssertionId, EntityId, EpistemicState, NewRelationAssertion, RelationAssertion, RelationKind, ReleaseId};
 use crate::relation_policy::{valid_entity_kinds, SOURCE_MAPPING_POLICY_VERSION};
 use crate::store::{ProvenanceStore, Result};
 use rusqlite::{params, OptionalExtension};
@@ -126,6 +126,25 @@ impl ProvenanceStore {
 
     pub fn assertion_count(&self) -> Result<i64> {
         self.conn.query_row("SELECT COUNT(*) FROM relation_assertions", [], |r| r.get(0))
+    }
+
+    /// P8.4（`docs/P8_4_STATUS.md`）: `retract.rs::retract_entity`用——このentityが
+    /// subject/objectどちらかとして関わるassertionを全て見つける（片方だけの
+    /// 一致も含む）。
+    pub fn assertion_ids_touching_entity(&self, entity_id: EntityId) -> Result<Vec<AssertionId>> {
+        let mut stmt = self.conn.prepare_cached(
+            "SELECT id FROM relation_assertions WHERE subject_entity_id = ?1 OR object_entity_id = ?1",
+        )?;
+        let rows = stmt.query_map(params![entity_id.0], |r| r.get::<_, i64>(0).map(AssertionId))?.collect::<rusqlite::Result<Vec<_>>>()?;
+        Ok(rows)
+    }
+
+    /// P8.4: このリポジトリで最初のassertion削除メソッド——`evidence`/
+    /// `review_decisions`を先に消してから呼ぶこと（FK制約、呼び出し元は
+    /// `retract.rs::retract_entity`のみ）。
+    pub fn delete_assertion(&self, id: AssertionId) -> Result<()> {
+        self.conn.prepare_cached("DELETE FROM relation_assertions WHERE id = ?1")?.execute(params![id.0])?;
+        Ok(())
     }
 
     /// 述語ごとの件数（`stats`サブコマンド用）。

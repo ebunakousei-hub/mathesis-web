@@ -118,6 +118,14 @@ proof-type, 17,905 excluded for having an endpoint outside the safe
 set — consistent in shape with every prior non-Mathlib project's
 numbers).
 
+> **Update (`docs/P8_5_STATUS.md`)**: a spot-check against pfr's real
+> GitHub source found a counterexample here too —
+> `PFR/Mathlib/Probability/Kernel/Composition/Comp.lean`'s
+> `IsMarkovKernel (deleteRight κ)` instance has a real tactic proof
+> (`by rw [...]; apply ... (by fun_prop)`), not a trivial delegation,
+> despite being classified `typeclass_hierarchy`. See that document —
+> the rule is real but not a content-free guarantee.
+
 ## Verified end-to-end, on the real pilot DB, not just synthetic tests
 
 1. Imported pfr into `scratch/p8_1/pilot_provenance.db` (same release,

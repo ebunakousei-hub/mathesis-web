@@ -74,6 +74,15 @@ methodological question**, recorded here rather than silently assumed —
 recorded in the manifest's own `scopeNotes` too, so it travels with the
 artifact.
 
+> **Update (`docs/P8_5_STATUS.md`)**: this question is no longer purely
+> open — a spot-check against the real, live Lean source of 20 sampled
+> `typeclass_hierarchy` declarations found real counterexamples (e.g.
+> `FLT/Deformations/Algebra/InverseLimit/Basic.lean`'s `Group
+> (InverseLimit G f)` instance has substantive multi-field tactic
+> proofs, not a trivial structural composition). The rule is a real
+> signal but not a "content-free" guarantee — see that document before
+> describing these records as verified-structural anywhere.
+
 Real numbers (`scratch/math_graph_pilot/classify_summary_p8_1.json`,
 combined with the existing P7.4 numbers in
 `scratch/math_graph_pilot/scope_report_p8_1.json`):
